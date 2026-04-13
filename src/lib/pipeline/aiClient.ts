@@ -8,7 +8,7 @@ import type { ZodSchema } from 'zod'
 //
 // For development (free):
 //   AI_PROVIDER=groq
-//   AI_MODEL=gpt-4o
+//   AI_MODEL=openai/gpt-oss-120b
 //   GROQ_API_KEY=your_key
 //
 // For production:
