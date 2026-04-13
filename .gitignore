@@ -1,0 +1,83 @@
+# Dependencies
+
+/node_modules
+/.pnp
+.pnp.js
+
+# Next.js
+
+/.next/
+/out/
+/build
+
+# Production
+
+/dist
+
+# Logs
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment variables (CRÍTICO)
+
+/.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Vercel
+
+.vercel
+
+# TypeScript
+
+*.tsbuildinfo
+
+# IDE / Editor
+
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS junk
+
+.DS_Store
+Thumbs.db
+
+# Testing (por si agregás después)
+
+/coverage
+
+# Local data / futura persistencia (IndexedDB dev helpers, dumps, etc.)
+
+/data/
+/storage/
+
+# Temp files
+
+*.tmp
+*.temp
+
+# Graph outputs / debugging (si empezás a exportar JSONs del pipeline)
+
+/debug/
+/exports/
+
+# Lock files (opcional — OJO acá)
+
+# Si usás npm:
+
+package-lock.json
+
+# Si usás yarn:
+
+# yarn.lock
+
+# Si usás pnpm:
+
+# pnpm-lock.yaml
