@@ -18,6 +18,7 @@ import '@xyflow/react/dist/style.css'
 import type { RepoGraph } from '@/lib/pipeline/schemas/graph'
 import { buildReactFlowGraph } from './graphLayout'
 import { nodeTypes, edgeTypes } from './GraphNodes'
+import { ChatPanel } from './ChatPanel'
 
 interface GraphRendererProps {
   graph: RepoGraph
@@ -61,6 +62,7 @@ export default function GraphRenderer({ graph, onOverlayChange }: GraphRendererP
   const [annotations, setAnnotations] = useState<Record<string, NodeAnnotation>>({})
   const [selectedId,  setSelectedId]  = useState<string | null>(null)
   const [sidebarTab,  setSidebarTab]  = useState<'filters' | 'node' | 'export'>('filters')
+  const [chatOpen, setChatOpen] = useState(false)
 
   const { nodes: initialNodes, edges: initialEdges } = useMemo(
     () => buildReactFlowGraph(graph),
@@ -465,7 +467,9 @@ const sidebarStyle: React.CSSProperties = {
   background: '#080e1a', borderRight: '1px solid #1e293b',
   padding: '16px 14px', overflowY: 'auto',
   display: 'flex', flexDirection: 'column',
+  
 }
+
 
 const tabBtnStyle: React.CSSProperties = {
   flex: 1, background: 'none', border: 'none', borderBottom: '2px solid transparent',
