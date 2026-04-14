@@ -53,38 +53,24 @@ export type Pass1Output = z.infer<typeof Pass1OutputSchema>
 
 // --- Pass 2 ---
 
-const NodeWithoutRoleSchema = z.object({
-  id: z.string(),
-  label: z.string(),
-  type: NodeTypeSchema,
-  parentId: z.string().nullable(),
-  depth: z.number().int().min(0).max(3),
-  files: z.array(z.string()),
-  metadata: z.object({
-    language: z.string().optional(),
-    lineCount: z.number().optional(),
-    complexity: z.enum(['low', 'medium', 'high']).optional(),
-  }),
-})
-
-const EdgeSchema = z.object({
-  id: z.string(),
-  source: z.string(),
-  target: z.string(),
-  edgeType: EdgeTypeSchema,
-  strength: z.union([
-    z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)
-  ]),
-  label: z.string().optional(),
-  confidence: EdgeConfidenceSchema,
-})
-
 export const Pass2OutputSchema = z.object({
   nodes: z.array(NodeWithoutRoleSchema),
   edges: z.array(EdgeSchema),
 })
 
 export type Pass2Output = z.infer<typeof Pass2OutputSchema>
+
+// Schemas separados para las dos llamadas del Pass 2
+export const Pass2NodesSchema = z.object({
+  nodes: z.array(NodeWithoutRoleSchema),
+})
+
+export const Pass2EdgesSchema = z.object({
+  edges: z.array(EdgeSchema),
+})
+
+export type Pass2Nodes = z.infer<typeof Pass2NodesSchema>
+export type Pass2Edges = z.infer<typeof Pass2EdgesSchema>
 
 // --- Pass 3 ---
 

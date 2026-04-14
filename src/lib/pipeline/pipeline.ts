@@ -7,12 +7,14 @@ import type {
 import {
   Pass1OutputSchema,
   Pass2OutputSchema,
+  Pass2NodesSchema,
+  Pass2EdgesSchema,
   Pass3OutputSchema,
   type Pass1Output,
   type Pass2Output,
 } from './schemas/validation'
 import { buildPass1Prompt, formatFileTree } from './prompts/pass1'
-import { buildPass2Prompt } from './prompts/pass2'
+import { buildPass2NodesPrompt, buildPass2EdgesPrompt } from './prompts/pass2'
 import { buildPass3Prompt } from './prompts/pass3'
 import { formatSampledFiles } from './sampler/fileSampler'
 import { callModelWithSchema } from './aiClient'
@@ -23,8 +25,8 @@ import { callModelWithSchema } from './aiClient'
 export interface PipelineInput {
   repoUrl: string
   repoName: string
-  fileTree: string[]                                  // all paths in the repo
-  fetchFileContent: (path: string) => Promise<string> // GitHub API fetcher injected here
+  fileTree: string[]
+  fetchFileContent: (path: string) => Promise<string>
 }
 
 // ------------------------------------------------------------
@@ -50,10 +52,20 @@ export async function runAnalysisPipeline(input: PipelineInput): Promise<RepoGra
   )
   const sampledContents = formatSampledFiles(fileContents, pass1.estimatedSize)
 
-  // --- Pass 2: Dependencies ---
-  console.log('[Pipeline] Pass 2: Dependency mapping...')
-  const pass2Prompt = buildPass2Prompt(repoName, pass1.tentativeModules, sampledContents)
-  const pass2: Pass2Output = await callModelWithSchema(pass2Prompt, Pass2OutputSchema)
+  // --- Pass 2a: Nodes ---
+  console.log('[Pipeline] Pass 2a: Node mapping...')
+  const pass2NodesPrompt = buildPass2NodesPrompt(repoName, pass1.tentativeModules, sampledContents)
+  const pass2Nodes = await callModelWithSchema(pass2NodesPrompt, Pass2NodesSchema)
+
+  // --- Pass 2b: Edges ---
+  console.log('[Pipeline] Pass 2b: Edge mapping...')
+  const pass2EdgesPrompt = buildPass2EdgesPrompt(repoName, pass2Nodes.nodes, sampledContents)
+  const pass2Edges = await callModelWithSchema(pass2EdgesPrompt, Pass2EdgesSchema)
+
+  const pass2: Pass2Output = {
+    nodes: pass2Nodes.nodes,
+    edges: pass2Edges.edges,
+  }
 
   // --- Pass 3: Semantics ---
   console.log('[Pipeline] Pass 3: Semantic enrichment...')
@@ -73,8 +85,6 @@ export async function runAnalysisPipeline(input: PipelineInput): Promise<RepoGra
     analysisVersion,
     analyzedAt,
     ...pass3.meta,
-    // If confidence < 0.6, force_directed (also enforced in Pass 3 prompt,
-    // but we double-check here as a safety net)
     layoutTemplate:
       pass3.meta.patternConfidence < 0.6
         ? 'force_directed'
@@ -110,14 +120,12 @@ export async function runAnalysisPipeline(input: PipelineInput): Promise<RepoGra
 // Utilities
 // ------------------------------------------------------------
 function hashFileTree(paths: string[]): string {
-  // Simple deterministic hash of the sorted file tree
-  // Used to detect when re-analysis is needed
   const sorted = [...paths].sort().join('|')
   let hash = 0
   for (let i = 0; i < sorted.length; i++) {
     const char = sorted.charCodeAt(i)
     hash = (hash << 5) - hash + char
-    hash = hash & hash // Convert to 32bit integer
+    hash = hash & hash
   }
   return Math.abs(hash).toString(16)
 }
