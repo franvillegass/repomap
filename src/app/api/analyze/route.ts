@@ -41,6 +41,8 @@ export async function POST(req: NextRequest) {
   }
 
   const { owner, repo } = parsed
+  console.log('[API] Token present:', !!process.env.GITHUB_TOKEN)
+  console.log('[API] Token prefix:', process.env.GITHUB_TOKEN?.slice(0, 6))
   // Prefer token from request body (private repos), fall back to env var
   const token = githubToken || process.env.GITHUB_TOKEN || undefined
 

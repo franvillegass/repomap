@@ -16,6 +16,10 @@ function getModel() {
   return groq(modelId)
 }
 
+function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
 export async function callModelWithSchema<T>(
   prompt: string,
   schema: ZodSchema<T>,
@@ -29,12 +33,18 @@ export async function callModelWithSchema<T>(
   let lastError: Error | null = null
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    // Wait 65 seconds before retrying to reset the TPM window
+    if (attempt > 0) {
+      console.log(`[aiClient] Waiting 65s before retry ${attempt}/${maxRetries}...`)
+      await sleep(65000)
+    }
+
     try {
       const result = await generateText({
         model: getModel(),
         prompt: prompt + '\n\nRespond with ONLY valid JSON. No markdown, no code blocks, no explanation.',
         temperature,
-        maxTokens: 8000,
+        maxTokens: 16000,
       })
 
       const raw = result.text.trim()
@@ -50,18 +60,18 @@ export async function callModelWithSchema<T>(
       try {
         parsed = JSON.parse(cleaned)
       } catch {
-        console.error(`[aiClient] JSON parse failed on attempt ${attempt + 1}:`, cleaned.slice(0, 500))
+        console.error(`[aiClient] JSON parse failed on attempt ${attempt + 1}:`, cleaned.slice(0, 300))
         lastError = new Error(`Invalid JSON from model: ${cleaned.slice(0, 200)}`)
         continue
       }
 
       const validated = schema.safeParse(parsed)
-if (!validated.success) {
-  console.error(`[aiClient] Schema validation failed on attempt ${attempt + 1}:`, JSON.stringify(validated.error.issues, null, 2))
-  console.error('[aiClient] Full parsed value:', JSON.stringify(parsed, null, 2))  // <-- cambiá .slice(0, 500) por esto
-  lastError = new Error(`Schema validation failed: ${JSON.stringify(validated.error.issues)}`)
-  continue
-}
+      if (!validated.success) {
+        console.error(`[aiClient] Schema validation failed on attempt ${attempt + 1}:`, JSON.stringify(validated.error.issues, null, 2))
+        console.error('[aiClient] Full parsed value:', JSON.stringify(parsed, null, 2))
+        lastError = new Error(`Schema validation failed: ${JSON.stringify(validated.error.issues)}`)
+        continue
+      }
 
       return validated.data
 
