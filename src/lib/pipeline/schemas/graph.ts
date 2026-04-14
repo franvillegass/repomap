@@ -52,6 +52,7 @@ export interface Node {
     language?: string
     lineCount?: number
     complexity?: ComplexityLevel
+    statusTag?: 'legacy' | 'in_refactor' | 'stable' | 'deprecated'
   }
 }
 

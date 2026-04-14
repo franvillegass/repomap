@@ -5,20 +5,22 @@ import type { RepoGraph, Node, Edge, LayoutTemplate } from '@/lib/pipeline/schem
 // Types
 // ------------------------------------------------------------
 
-export interface RFNodeData {
-  label:        string
-  nodeType:     Node['type']
+export interface RFNodeData extends Record<string, unknown> {
+  label: string
+  nodeType: 'layer' | 'module' | 'file' | 'component'
   detectedRole: string
-  patterns:     string[]
-  fileCount:    number
-  complexity?:  string
-  depth:        number
+  patterns: string[]
+  fileCount: number
+  complexity?: 'low' | 'medium' | 'high'
+  depth: number
+
+  statusTag?: 'legacy' | 'in_refactor' | 'stable' | 'deprecated'
 }
 
-export interface RFEdgeData {
-  edgeType:   Edge['edgeType']
-  confidence: Edge['confidence']
-  strength:   Edge['strength']
+export interface RFEdgeData extends Record<string, unknown> {
+  edgeType: 'engineering' | 'architecture' | 'both'
+  confidence: 'high' | 'medium' | 'uncertain'
+  strength: number
 }
 
 // ------------------------------------------------------------
@@ -46,19 +48,29 @@ export function buildReactFlowGraph(graph: RepoGraph): {
   const positions = computePositions(allNodes, meta.layoutTemplate)
 
   const rfNodes: RFNode<RFNodeData>[] = allNodes.map((node) => ({
-    id:       node.id,
-    type:     'repoNode',
-    position: positions[node.id] ?? { x: 0, y: 0 },
-    data: {
-      label:        node.label,
-      nodeType:     node.type,
-      detectedRole: node.detectedRole,
-      patterns:     node.patterns,
-      fileCount:    node.files.length,
-      complexity:   node.metadata.complexity,
-      depth:        node.depth,
-    },
-  }))
+  id: node.id,
+  type: 'repoNode',
+  position: positions[node.id] ?? { x: 0, y: 0 },
+
+  data: {
+    label: node.label,
+
+    // 🔥 PASO 2 (ACÁ VA EL FIX)
+    nodeType: node.type as 'layer' | 'module' | 'file' | 'component',
+
+    detectedRole: node.detectedRole,
+    patterns: node.patterns,
+    fileCount: node.files.length,
+
+    // importante: evitar undefined
+    complexity: node.metadata.complexity ?? 'low',
+
+    depth: node.depth,
+
+    // 🔥 ESTE ES EL QUE TE FALTABA
+    statusTag: node.metadata.statusTag ?? 'stable',
+  },
+}))
 
   const rfEdges: RFEdge<RFEdgeData>[] = visibleEdges.map((edge) => {
     const ov = overlay.edgeOverrides[edge.id]
@@ -69,10 +81,13 @@ export function buildReactFlowGraph(graph: RepoGraph): {
       type:   'repoEdge',
       label:  ov?.customLabel ?? edge.label,
       data: {
-        edgeType:   (ov?.customEdgeType ?? edge.edgeType) as Edge['edgeType'],
-        confidence: edge.confidence,
-        strength:   edge.strength,
-      },
+  edgeType: (ov?.customEdgeType ?? edge.edgeType) as
+    'engineering' | 'architecture' | 'both',
+
+  confidence: edge.confidence,
+
+  strength: edge.strength,
+}
     }
   })
 
