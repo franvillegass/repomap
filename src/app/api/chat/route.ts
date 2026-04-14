@@ -6,14 +6,14 @@ import type { RepoGraph } from '@/lib/pipeline/schemas/graph'
 
 export const dynamic = 'force-dynamic'
 
-function getModel() {
+export function getModel() {
   const provider = process.env.AI_PROVIDER ?? 'groq'
   const modelId  = process.env.AI_MODEL    ?? 'gpt-4o'
   if (provider === 'anthropic') return createAnthropic()(modelId)
   return createGroq()(modelId)
 }
 
-function buildSystemPrompt(graph: RepoGraph): string {
+export function buildSystemPrompt(graph: RepoGraph): string {
   const nodeLines = graph.nodes.map((n) => {
     const role     = n.detectedRole && n.detectedRole !== 'unknown' ? n.detectedRole : null
     const patterns = n.patterns.length > 0 ? n.patterns.join(', ') : null
