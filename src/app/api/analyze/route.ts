@@ -17,81 +17,40 @@ import { runAnalysisPipeline } from '@/lib/pipeline/pipeline'
 // ------------------------------------------------------------
 
 export async function POST(req: NextRequest) {
-  // --- Parse body ---
-  let body: { repoUrl?: string; githubToken?: string }
   try {
-    body = await req.json()
-  } catch {
-    return json400('Request body must be valid JSON.')
-  }
-
-  const { repoUrl, githubToken } = body
-
-  if (!repoUrl || typeof repoUrl !== 'string') {
-    return json400('"repoUrl" is required and must be a string.')
-  }
-
-  // --- Parse GitHub URL ---
-  const parsed = parseGithubUrl(repoUrl)
-  if (!parsed) {
-    return json400(
-      `"${repoUrl}" does not look like a valid GitHub repository URL. ` +
-      'Expected format: https://github.com/owner/repo'
-    )
-  }
-
-  const { owner, repo } = parsed
-  console.log('[API] Token present:', !!process.env.GITHUB_TOKEN)
-  console.log('[API] Token prefix:', process.env.GITHUB_TOKEN?.slice(0, 6))
-  // Prefer token from request body (private repos), fall back to env var
-  const token = githubToken || process.env.GITHUB_TOKEN || undefined
-
-  try {
-    // --- Fetch file tree (single GitHub API call) ---
-    console.log(`[API] Fetching file tree for ${owner}/${repo}...`)
-    const fileTree = await fetchFileTree(owner, repo, token)
-
-    if (fileTree.length === 0) {
-      return json400('The repository appears to be empty.')
+    const { messages, graph } = (await req.json()) as {
+      messages: { role: 'user' | 'assistant'; content: string }[]
+      graph:    RepoGraph
     }
 
-    console.log(`[API] File tree fetched: ${fileTree.length} files.`)
+    if (!graph) {
+      return new Response('Missing graph context', { status: 400 })
+    }
 
-    // --- Run analysis pipeline ---
-    const graph = await runAnalysisPipeline({
-      repoUrl,
-      repoName: `${owner}/${repo}`,
-      fileTree,
-      // fetchFileContent is injected so the pipeline stays testable
-      fetchFileContent: (path) => fetchFileContent(owner, repo, path, token),
+    const systemPrompt = buildSystemPrompt(graph)
+    console.log('[chat] system chars:', systemPrompt.length, '| messages:', messages.length)
+
+    const result = streamText({
+      model:       getModel(),
+      system:      systemPrompt,
+      messages,
+      maxTokens:   1024,
+      temperature: 0.3,
+      maxRetries:  0,          // ← clave: sin reintentos
+      onError:     (err) => console.error('[chat stream error]', err), // ← log del error real
     })
 
-    return NextResponse.json(graph, { status: 200 })
-
+    return result.toDataStreamResponse()
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-
-    // Surface GitHub 404s and 403s with friendlier messages
-    if (message.includes('Not Found') || message.includes('404')) {
-      return json400(
-        `Repository "${owner}/${repo}" not found. ` +
-        'Check the URL and make sure your token has the correct permissions.'
-      )
-    }
-    if (message.includes('Bad credentials') || message.includes('401')) {
-      return json400('GitHub token is invalid or expired.')
-    }
-    if (message.includes('rate limit') || message.includes('403')) {
-      return NextResponse.json(
-        { error: 'GitHub API rate limit exceeded. Provide a token or wait a moment.' },
-        { status: 429 }
-      )
-    }
-
-    console.error('[API] Pipeline error:', message)
-    return NextResponse.json({ error: message }, { status: 500 })
+    console.error('[chat/route] error:', message)
+    return new Response(JSON.stringify({ error: message }), {
+      status:  500,
+      headers: { 'Content-Type': 'application/json' },
+    })
   }
 }
+
 
 // --- Only POST is supported ---
 export function GET() {

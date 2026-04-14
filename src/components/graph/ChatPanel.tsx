@@ -169,23 +169,32 @@ function ChatInner({ graph, initialMessages, onClose }: {
   const inputRef    = useRef<HTMLInputElement>(null)
   const [showSugg, setShowSugg] = useState(initialMessages.length === 0)
 
-  const chatBody = useMemo(() => ({ graph }), [graph])
+  // FIX 1: body estable — nunca cambia de referencia después del mount
+  const graphRef = useRef(graph)
+  useEffect(() => { graphRef.current = graph }, [graph])
+  const chatBody = useMemo(() => ({ get graph() { return graphRef.current } }), [])
 
   const { messages, input, handleInputChange, handleSubmit, isLoading, error, setInput, reload } = useChat({
     api:            '/api/chat',
     body:           chatBody,
     initialMessages,
+    onError: (err) => console.error('[useChat error]', err), // FIX 3
   })
 
-  // Persist on every completed exchange
+  // FIX 2: messages fuera de deps — se lee via ref al momento de persistir
+  const messagesRef = useRef(messages)
+  useEffect(() => { messagesRef.current = messages }, [messages])
+
   useEffect(() => {
-    if (isLoading || messages.length === 0) return
+    if (isLoading) return
+    const msgs = messagesRef.current
+    if (msgs.length === 0) return
     saveChatSession({
       repoName:  graph.meta.repoName,
-      messages:  messages.map((m) => ({ id: m.id, role: m.role as 'user' | 'assistant', content: m.content })),
+      messages:  msgs.map((m) => ({ id: m.id, role: m.role as 'user' | 'assistant', content: m.content })),
       updatedAt: new Date().toISOString(),
     })
-  }, [messages, isLoading, graph.meta.repoName])
+  }, [isLoading, graph.meta.repoName]) // messages fuera
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages, isLoading])
   useEffect(() => { if (messages.length > 0) setShowSugg(false) }, [messages.length])
@@ -271,6 +280,7 @@ function ChatInner({ graph, initialMessages, onClose }: {
     </div>
   )
 }
+
 
 // ─────────────────────────────────────────────────────────────
 // ChatHeader

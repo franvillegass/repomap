@@ -4,6 +4,8 @@ import { createGroq } from '@ai-sdk/groq'
 import { NextRequest } from 'next/server'
 import type { RepoGraph } from '@/lib/pipeline/schemas/graph'
 
+export const dynamic = 'force-dynamic'
+
 function getModel() {
   const provider = process.env.AI_PROVIDER ?? 'groq'
   const modelId  = process.env.AI_MODEL    ?? 'gpt-4o'
@@ -68,14 +70,15 @@ export async function POST(req: NextRequest) {
     if (!graph) {
       return new Response('Missing graph context', { status: 400 })
     }
+    const systemPrompt = buildSystemPrompt(graph)
+    console.log('[chat] system chars:', systemPrompt.length, '| messages:', messages.length)
 
     const result = streamText({
       model:       getModel(),
-      system:      buildSystemPrompt(graph),
+      system:      systemPrompt, //buildSystemPrompt(graph),
       messages,
       maxTokens:   1024,
-      temperature: 0.3,
-      maxRetries:  3,   // handles transient errors + rate limits automatically
+      temperature: 0.3   
     })
 
     return result.toDataStreamResponse()
