@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { parseGithubUrl, fetchFileTree, fetchFileContent } from '@/lib/github/githubClient'
 import { runAnalysisPipeline } from '@/lib/pipeline/pipeline'
 import type { RepoGraph } from '@/lib/pipeline/schemas/graph'
-import { buildSystemPrompt } from '../chat/route'
-import { getModel } from '../chat/route'
+import { buildSystemPrompt, getModel } from '@/lib/ai'
 import { streamText } from 'ai'
 
 
