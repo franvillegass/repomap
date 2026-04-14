@@ -19,6 +19,11 @@ import type { RepoGraph } from '@/lib/pipeline/schemas/graph'
 import { buildReactFlowGraph } from './graphLayout'
 import { nodeTypes, edgeTypes } from './GraphNodes'
 import { ChatPanel } from './ChatPanel'
+import {
+  OnionView, LayerStackView, ClusterView, PipelineView,
+  ViewSwitcher, recommendedView,
+  type ViewType,
+} from './AlternativeViews'
 
 interface GraphRendererProps {
   graph: RepoGraph
@@ -64,6 +69,7 @@ export default function GraphRenderer({ graph, onOverlayChange }: GraphRendererP
   const [sidebarTab,  setSidebarTab]  = useState<'filters' | 'node' | 'export'>('filters')
   const [chatOpen,    setChatOpen]    = useState(false)
   const [chatWidth,   setChatWidth]   = useState(340)
+  const [viewType,    setViewType]    = useState<ViewType>(() => recommendedView(graph.meta.layoutTemplate))
 
   function startResize(e: React.MouseEvent) {
     e.preventDefault()
@@ -350,36 +356,8 @@ export default function GraphRenderer({ graph, onOverlayChange }: GraphRendererP
       </div>
 
       {/* ── Graph canvas ── */}
-      <div style={{ flex: 1, position: 'relative' }}>
-        <ReactFlow
-          nodes={annotatedNodes}
-          edges={visibleEdges}
-          nodeTypes={nodeTypes}
-          edgeTypes={edgeTypes}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          onNodeClick={onNodeClick}
-          fitView
-          fitViewOptions={{ padding: 0.15 }}
-          minZoom={0.1}
-          maxZoom={2.5}
-          defaultEdgeOptions={{ type: 'repoEdge' }}
-          proOptions={{ hideAttribution: true }}
-        >
-          <Background variant={BackgroundVariant.Dots} gap={24} size={1.5} color="#1e2a3a" />
-          <Controls style={{ background: '#0f172a', border: '1px solid #1e293b', borderRadius: 8 }} />
-          <MiniMap
-            style={{ background: '#0f172a', border: '1px solid #1e293b', borderRadius: 8 }}
-            nodeColor={(n) => {
-              const type = (n.data as { nodeType?: string }).nodeType
-              return type === 'layer' ? '#60a5fa' : type === 'module' ? '#a78bfa' : type === 'file' ? '#34d399' : '#fb923c'
-            }}
-            maskColor="rgba(0,0,0,0.6)"
-          />
-        </ReactFlow>
-
-        {/* Header badge */}
+      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+        {/* Header badge — siempre visible sobre cualquier vista */}
         <div style={{ position: 'absolute', top: 16, left: 16, background: 'rgba(15,23,42,0.9)', border: '1px solid #1e293b', borderRadius: 8, padding: '8px 14px', backdropFilter: 'blur(8px)', zIndex: 10 }}>
           <div style={{ fontSize: 11, color: '#64748b', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
             {graph.meta.detectedPattern.replace(/_/g, ' ')}
@@ -388,6 +366,11 @@ export default function GraphRenderer({ graph, onOverlayChange }: GraphRendererP
           <div style={{ fontSize: 10, color: '#475569', marginTop: 2 }}>
             confidence {Math.round(graph.meta.patternConfidence * 100)}%
           </div>
+          <ViewSwitcher
+            current={viewType}
+            recommended={recommendedView(graph.meta.layoutTemplate)}
+            onChange={setViewType}
+          />
           {/* ── Chat toggle ── */}
           <button
             onClick={() => setChatOpen((o) => !o)}
@@ -412,7 +395,49 @@ export default function GraphRenderer({ graph, onOverlayChange }: GraphRendererP
           </button>
         </div>
 
-        <Legend />
+        {/* ── Node graph (React Flow) ── */}
+        {viewType === 'graph' && (
+          <>
+            <ReactFlow
+              nodes={annotatedNodes}
+              edges={visibleEdges}
+              nodeTypes={nodeTypes}
+              edgeTypes={edgeTypes}
+              onNodesChange={onNodesChange}
+              onEdgesChange={onEdgesChange}
+              onConnect={onConnect}
+              onNodeClick={onNodeClick}
+              fitView
+              fitViewOptions={{ padding: 0.15 }}
+              minZoom={0.1}
+              maxZoom={2.5}
+              defaultEdgeOptions={{ type: 'repoEdge' }}
+              proOptions={{ hideAttribution: true }}
+            >
+              <Background variant={BackgroundVariant.Dots} gap={24} size={1.5} color="#1e2a3a" />
+              <Controls style={{ background: '#0f172a', border: '1px solid #1e293b', borderRadius: 8 }} />
+              <MiniMap
+                style={{ background: '#0f172a', border: '1px solid #1e293b', borderRadius: 8 }}
+                nodeColor={(n) => {
+                  const type = (n.data as { nodeType?: string }).nodeType
+                  return type === 'layer' ? '#60a5fa' : type === 'module' ? '#a78bfa' : type === 'file' ? '#34d399' : '#fb923c'
+                }}
+                maskColor="rgba(0,0,0,0.6)"
+              />
+            </ReactFlow>
+            <Legend />
+          </>
+        )}
+
+        {/* ── Alternative views — start below the badge (~220px) ── */}
+        {viewType !== 'graph' && (
+          <div style={{ position: 'absolute', inset: 0, paddingTop: 220, boxSizing: 'border-box' }}>
+            {viewType === 'onion'    && <OnionView    graph={graph} />}
+            {viewType === 'layers'   && <LayerStackView graph={graph} />}
+            {viewType === 'clusters' && <ClusterView  graph={graph} />}
+            {viewType === 'pipeline' && <PipelineView graph={graph} />}
+          </div>
+        )}
       </div>
 
       {/* ── Resize handle + Chat panel ── */}
