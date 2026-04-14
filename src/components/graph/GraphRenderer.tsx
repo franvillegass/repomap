@@ -62,7 +62,29 @@ export default function GraphRenderer({ graph, onOverlayChange }: GraphRendererP
   const [annotations, setAnnotations] = useState<Record<string, NodeAnnotation>>({})
   const [selectedId,  setSelectedId]  = useState<string | null>(null)
   const [sidebarTab,  setSidebarTab]  = useState<'filters' | 'node' | 'export'>('filters')
-  const [chatOpen, setChatOpen] = useState(false)
+  const [chatOpen,    setChatOpen]    = useState(false)
+  const [chatWidth,   setChatWidth]   = useState(340)
+
+  function startResize(e: React.MouseEvent) {
+    e.preventDefault()
+    const startX = e.clientX
+    const startW = chatWidth
+    function onMove(ev: MouseEvent) {
+      // drag left = panel grows, drag right = panel shrinks
+      const newW = Math.max(260, Math.min(580, startW - (ev.clientX - startX)))
+      setChatWidth(newW)
+    }
+    function onUp() {
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      document.body.style.cursor      = ''
+      document.body.style.userSelect  = ''
+    }
+    document.body.style.cursor     = 'col-resize'
+    document.body.style.userSelect = 'none'
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+  }
 
   const { nodes: initialNodes, edges: initialEdges } = useMemo(
     () => buildReactFlowGraph(graph),
@@ -366,10 +388,57 @@ export default function GraphRenderer({ graph, onOverlayChange }: GraphRendererP
           <div style={{ fontSize: 10, color: '#475569', marginTop: 2 }}>
             confidence {Math.round(graph.meta.patternConfidence * 100)}%
           </div>
+          {/* ── Chat toggle ── */}
+          <button
+            onClick={() => setChatOpen((o) => !o)}
+            style={{
+              marginTop:     8,
+              width:         '100%',
+              background:    chatOpen ? 'rgba(99,102,241,0.25)' : 'rgba(99,102,241,0.1)',
+              border:        `1px solid ${chatOpen ? 'rgba(99,102,241,0.6)' : 'rgba(99,102,241,0.25)'}`,
+              borderRadius:  5,
+              color:         chatOpen ? '#a5b4fc' : '#6366f1',
+              cursor:        'pointer',
+              fontSize:      10,
+              fontWeight:    700,
+              fontFamily:    'inherit',
+              letterSpacing: '0.06em',
+              padding:       '5px 0',
+              textTransform: 'uppercase',
+              transition:    'all 0.15s',
+            }}
+          >
+            {chatOpen ? '✕ close chat' : '✦ ask AI'}
+          </button>
         </div>
 
         <Legend />
       </div>
+
+      {/* ── Resize handle + Chat panel ── */}
+      {chatOpen && (
+        <>
+          {/* Drag handle — sits between canvas and chat */}
+          <div
+            onMouseDown={startResize}
+            title="Drag to resize"
+            style={{
+              width:      5,
+              flexShrink: 0,
+              background: '#1e293b',
+              cursor:     'col-resize',
+              transition: 'background 0.15s',
+              zIndex:     20,
+            }}
+            onMouseEnter={(e) => { e.currentTarget.style.background = '#3b82f6' }}
+            onMouseLeave={(e) => { e.currentTarget.style.background = '#1e293b' }}
+          />
+          <div style={{ width: chatWidth, flexShrink: 0 }}>
+            <ChatPanel graph={graph} onClose={() => setChatOpen(false)} />
+          </div>
+        </>
+      )}
+
     </div>
   )
 }
@@ -467,9 +536,7 @@ const sidebarStyle: React.CSSProperties = {
   background: '#080e1a', borderRight: '1px solid #1e293b',
   padding: '16px 14px', overflowY: 'auto',
   display: 'flex', flexDirection: 'column',
-  
 }
-
 
 const tabBtnStyle: React.CSSProperties = {
   flex: 1, background: 'none', border: 'none', borderBottom: '2px solid transparent',
