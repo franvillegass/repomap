@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import type { RepoGraph, Node } from '@/lib/pipeline/schemas/graph'
 
 // ─────────────────────────────────────────────────────────────
@@ -138,8 +138,11 @@ function arcPath(cx: number, cy: number, ri: number, ro: number, a1: number, a2:
   return `M ${cx+ro*C(s)} ${cy+ro*S(s)} A ${ro} ${ro} 0 ${lg} 1 ${cx+ro*C(e)} ${cy+ro*S(e)} L ${cx+ri*C(e)} ${cy+ri*S(e)} A ${ri} ${ri} 0 ${lg} 0 ${cx+ri*C(s)} ${cy+ri*S(s)} Z`
 }
 
-export function OnionView({ graph }: { graph: RepoGraph }) {
-  const [hovered, setHovered] = useState<string | null>(null)
+export function OnionView({ graph, onNodeClick }: { graph: RepoGraph; onNodeClick?: (node: Node) => void }) {
+  const [hovered, setHovered]     = useState<string | null>(null)
+  const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 })
+  const dragging = useRef<{ startX: number; startY: number; ox: number; oy: number } | null>(null)
+  const isDragging = useRef(false)
   const CX = 290, CY = 295
 
   const byDepth = useMemo(() => {
@@ -151,50 +154,96 @@ export function OnionView({ graph }: { graph: RepoGraph }) {
     return m
   }, [graph.nodes])
 
-  const depths    = Object.keys(byDepth).map(Number).sort()
-  const hovNode   = hovered ? graph.nodes.find((n) => n.id === hovered) ?? null : null
+  const depths  = Object.keys(byDepth).map(Number).sort()
+  const hovNode = hovered ? graph.nodes.find((n) => n.id === hovered) ?? null : null
+
+  const onWheel = (e: React.WheelEvent) => {
+    e.preventDefault()
+    const delta = e.deltaY > 0 ? 0.9 : 1.1
+    setTransform((t) => ({ ...t, scale: Math.min(4, Math.max(0.25, t.scale * delta)) }))
+  }
+
+  const onMouseDown = (e: React.MouseEvent) => {
+    if ((e.target as Element).closest('[data-node]')) return
+    isDragging.current = false
+    dragging.current = { startX: e.clientX, startY: e.clientY, ox: transform.x, oy: transform.y }
+  }
+
+  const onMouseMove = (e: React.MouseEvent) => {
+    if (!dragging.current) return
+    const dx = e.clientX - dragging.current.startX
+    const dy = e.clientY - dragging.current.startY
+    if (Math.abs(dx) > 3 || Math.abs(dy) > 3) isDragging.current = true
+    setTransform((t) => ({
+      ...t,
+      x: dragging.current!.ox + dx,
+      y: dragging.current!.oy + dy,
+    }))
+  }
+
+  const onMouseUp = () => { dragging.current = null }
 
   return (
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-      <div style={{ flex: 1, position: 'relative' }}>
-        <svg width="100%" height="100%" viewBox="0 0 580 590" style={{ display: 'block' }}>
-
+      <div
+        style={{ flex: 1, position: 'relative', cursor: dragging.current ? 'grabbing' : 'grab', overflow: 'hidden' }}
+        onWheel={onWheel}
+        onMouseDown={onMouseDown}
+        onMouseMove={onMouseMove}
+        onMouseUp={onMouseUp}
+        onMouseLeave={onMouseUp}
+      >
+        <svg
+          width="100%" height="100%"
+          viewBox="0 0 580 590"
+          style={{
+            display: 'block',
+            transformOrigin: 'center center',
+            transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
+          }}
+        >
           {/* Background guide rings */}
           {depths.map((d) => {
             const r = RINGS[d]
             if (!r) return null
-            return <circle key={'bg'+d} cx={CX} cy={CY} r={r.outer} fill="none" stroke={RING_STROKE[d]} strokeWidth={0.4} strokeOpacity={0.2} strokeDasharray="4 4" />
+            return (
+              <circle key={'bg'+d} cx={CX} cy={CY} r={r.outer}
+                fill="none" stroke={RING_STROKE[d]}
+                strokeWidth={0.4} strokeOpacity={0.2} strokeDasharray="4 4"
+              />
+            )
           })}
 
           {/* Segments */}
           {depths.flatMap((d) => {
-            const nodes = byDepth[d] ?? []
-            const ring  = RINGS[d]
+            const nodes  = byDepth[d] ?? []
+            const ring   = RINGS[d]
             if (!ring || !nodes.length) return []
-            const angle = (2 * Math.PI) / nodes.length
-            const start = -Math.PI / 2
+            const angle  = (2 * Math.PI) / nodes.length
+            const start  = -Math.PI / 2
             const stroke = RING_STROKE[d]
 
             return nodes.map((node, i) => {
-              const a1   = start + i * angle, a2 = a1 + angle
-              const mid  = (a1 + a2) / 2
-              const midR = ring.inner <= 1 ? ring.outer * 0.56 : (ring.inner + ring.outer) / 2
-              const lx   = CX + midR * Math.cos(mid)
-              const ly   = CY + midR * Math.sin(mid)
-              const path = arcPath(CX, CY, ring.inner, ring.outer, a1, a2)
-              const col  = nc(node.type)
-              const hov  = hovered === node.id
+              const a1     = start + i * angle, a2 = a1 + angle
+              const mid    = (a1 + a2) / 2
+              const midR   = ring.inner <= 1 ? ring.outer * 0.56 : (ring.inner + ring.outer) / 2
+              const lx     = CX + midR * Math.cos(mid)
+              const ly     = CY + midR * Math.sin(mid)
+              const path   = arcPath(CX, CY, ring.inner, ring.outer, a1, a2)
+              const col    = nc(node.type)
+              const hov    = hovered === node.id
               const arcLen = midR * angle
-              const maxCh = Math.max(3, Math.floor(arcLen / 7))
-              const lbl   = node.label.length > maxCh ? node.label.slice(0, maxCh - 1) + '…' : node.label
-              let rot     = (mid * 180) / Math.PI
+              const maxCh  = Math.max(3, Math.floor(arcLen / 7))
+              const lbl    = node.label.length > maxCh ? node.label.slice(0, maxCh - 1) + '…' : node.label
+              let rot      = (mid * 180) / Math.PI
               if (rot > 90 && rot < 270) rot += 180
 
               return (
-                <g key={node.id}
+                <g key={node.id} data-node="1"
                   onMouseEnter={() => setHovered(node.id)}
                   onMouseLeave={() => setHovered(null)}
-                  style={{ cursor: 'default' }}
+                  onClick={() => { if (!isDragging.current) onNodeClick?.(node) }}
+                  style={{ cursor: onNodeClick ? 'pointer' : 'default' }}
                 >
                   <path d={path}
                     fill={hov ? col.bg.replace('0.12', '0.32') : col.bg}
@@ -221,12 +270,14 @@ export function OnionView({ graph }: { graph: RepoGraph }) {
             })
           })}
 
-          {/* Ring depth labels (right side) */}
+          {/* Ring depth labels */}
           {depths.map((d) => {
             const r = RINGS[d]
             if (!r) return null
             return (
-              <text key={'dlbl'+d} x={CX + r.outer + 14} y={CY + (d - depths.length / 2 + 0.5) * 16}
+              <text key={'dlbl'+d}
+                x={CX + r.outer + 14}
+                y={CY + (d - depths.length / 2 + 0.5) * 16}
                 dominantBaseline="central"
                 style={{ fill: RING_STROKE[d], fontSize: 9, fontFamily: '"JetBrains Mono",monospace', opacity: 0.55 }}
               >
@@ -235,6 +286,23 @@ export function OnionView({ graph }: { graph: RepoGraph }) {
             )
           })}
         </svg>
+
+        {/* Zoom controls */}
+        <div style={{ position: 'absolute', bottom: 12, right: 12, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {([['＋', 1.2], ['－', 0.8], ['⊙', 'reset']] as const).map(([icon, action]) => (
+            <button key={String(icon)}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={() => action === 'reset'
+                ? setTransform({ x: 0, y: 0, scale: 1 })
+                : setTransform((t) => ({ ...t, scale: Math.min(4, Math.max(0.25, t.scale * (action as number))) }))}
+              style={{
+                background: 'rgba(15,23,42,0.9)', border: '1px solid #1e293b', borderRadius: 5,
+                color: '#475569', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit',
+                width: 28, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+            >{icon}</button>
+          ))}
+        </div>
 
         {hovNode && <HoverCard node={hovNode} />}
       </div>
@@ -258,7 +326,7 @@ export function OnionView({ graph }: { graph: RepoGraph }) {
 // LAYER STACK VIEW — horizontal bands
 // ─────────────────────────────────────────────────────────────
 
-export function LayerStackView({ graph }: { graph: RepoGraph }) {
+export function LayerStackView({ graph, onNodeClick }: { graph: RepoGraph; onNodeClick?: (node: Node) => void }) {
   const [hovered, setHovered] = useState<string | null>(null)
 
   const bands = useMemo(() => {
@@ -299,16 +367,26 @@ export function LayerStackView({ graph }: { graph: RepoGraph }) {
   }, [graph.edges, bands])
 
   return (
-    <div style={{ width: '100%', height: '100%', overflowY: 'auto', padding: '0 24px 20px', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: 0 }}>
+    <div style={{
+      width: '100%', height: '100%', overflowY: 'auto',
+      padding: '0 24px 20px', boxSizing: 'border-box',
+      display: 'flex', flexDirection: 'column', gap: 0,
+    }}>
       {bands.map((band, bi) => {
-        const col = nc(band.nodeType)
-        const nextBand = bands[bi + 1]
+        const col       = nc(band.nodeType)
+        const nextBand  = bands[bi + 1]
         const connCount = nextBand ? (edgeCounts[band.id]?.[nextBand.id] ?? 0) : 0
 
         return (
           <div key={band.id}>
             {/* Band */}
-            <div style={{ background: col.bg, border: `1px solid ${col.stroke}55`, borderLeft: `3px solid ${col.stroke}`, borderRadius: 8, padding: '12px 16px' }}>
+            <div style={{
+              background:   col.bg,
+              border:       `1px solid ${col.stroke}55`,
+              borderLeft:   `3px solid ${col.stroke}`,
+              borderRadius: 8,
+              padding:      '12px 16px',
+            }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: band.children.length > 0 ? 10 : 0 }}>
                 <span style={{ color: col.text, fontSize: 12, fontWeight: 700, fontFamily: '"JetBrains Mono",monospace' }}>
                   {band.label}
@@ -330,13 +408,18 @@ export function LayerStackView({ graph }: { graph: RepoGraph }) {
                       <div key={child.id}
                         onMouseEnter={() => setHovered(child.id)}
                         onMouseLeave={() => setHovered(null)}
+                        onClick={() => onNodeClick?.(child)}
                         title={child.detectedRole !== 'unknown' ? child.detectedRole : child.id}
                         style={{
-                          background:   hov ? cc.bg.replace('0.12','0.3') : cc.bg,
+                          background:   hov ? cc.bg.replace('0.12', '0.3') : cc.bg,
                           border:       `1px solid ${cc.stroke}${hov ? '' : '88'}`,
-                          borderRadius: 5, color: cc.text, cursor: 'default',
-                          fontSize: 10, fontFamily: '"JetBrains Mono",monospace',
-                          padding: '3px 8px', transition: 'all 0.12s',
+                          borderRadius: 5,
+                          color:        cc.text,
+                          cursor:       onNodeClick ? 'pointer' : 'default',
+                          fontSize:     10,
+                          fontFamily:   '"JetBrains Mono",monospace',
+                          padding:      '3px 8px',
+                          transition:   'all 0.12s',
                         }}
                       >
                         {child.label}
@@ -372,7 +455,7 @@ export function LayerStackView({ graph }: { graph: RepoGraph }) {
 // CLUSTER VIEW — card grid per module
 // ─────────────────────────────────────────────────────────────
 
-export function ClusterView({ graph }: { graph: RepoGraph }) {
+export function ClusterView({ graph, onNodeClick }: { graph: RepoGraph; onNodeClick?: (node: Node) => void }) {
   const [hovered, setHovered] = useState<string | null>(null)
 
   const clusters = useMemo(() => {
@@ -403,10 +486,12 @@ export function ClusterView({ graph }: { graph: RepoGraph }) {
             <div key={node.id}
               onMouseEnter={() => setHovered(node.id)}
               onMouseLeave={() => setHovered(null)}
+              onClick={() => onNodeClick?.(node)}
               style={{
-                background:    hov ? col.bg.replace('0.12','0.24') : col.bg,
+                background:    hov ? col.bg.replace('0.12', '0.24') : col.bg,
                 border:        `1px solid ${col.stroke}${hov ? '' : '66'}`,
                 borderRadius:  10,
+                cursor:        onNodeClick ? 'pointer' : 'default',
                 display:       'flex',
                 flexDirection: 'column',
                 overflow:      'hidden',
@@ -419,12 +504,18 @@ export function ClusterView({ graph }: { graph: RepoGraph }) {
                   <div style={{ color: col.text, fontFamily: '"JetBrains Mono",monospace', fontSize: 11, fontWeight: 700, lineHeight: 1.35 }}>
                     {node.label}
                   </div>
-                  <span style={{ background: col.bg, border: `1px solid ${col.stroke}66`, borderRadius: 4, color: col.text, flexShrink: 0, fontSize: 8, fontFamily: '"JetBrains Mono",monospace', padding: '2px 5px', marginTop: 1 }}>
+                  <span style={{
+                    background: col.bg, border: `1px solid ${col.stroke}66`, borderRadius: 4,
+                    color: col.text, flexShrink: 0, fontSize: 8, fontFamily: '"JetBrains Mono",monospace',
+                    padding: '2px 5px', marginTop: 1,
+                  }}>
                     {node.type}
                   </span>
                 </div>
                 {node.detectedRole && node.detectedRole !== 'unknown' && (
-                  <div style={{ color: '#475569', fontFamily: '"JetBrains Mono",monospace', fontSize: 9, marginTop: 3 }}>{node.detectedRole}</div>
+                  <div style={{ color: '#475569', fontFamily: '"JetBrains Mono",monospace', fontSize: 9, marginTop: 3 }}>
+                    {node.detectedRole}
+                  </div>
                 )}
                 <div style={{ display: 'flex', gap: 8, marginTop: 7 }}>
                   <span title="Incoming connections" style={{ color: '#334155', fontSize: 9, fontFamily: '"JetBrains Mono",monospace' }}>↓{edgesIn}</span>
@@ -441,9 +532,15 @@ export function ClusterView({ graph }: { graph: RepoGraph }) {
                   {children.slice(0, 7).map((child) => {
                     const cc = nc(child.type)
                     return (
-                      <div key={child.id} style={{ alignItems: 'center', display: 'flex', gap: 6 }}>
+                      <div key={child.id}
+                        onClick={(e) => { e.stopPropagation(); onNodeClick?.(child) }}
+                        style={{ alignItems: 'center', display: 'flex', gap: 6, cursor: onNodeClick ? 'pointer' : 'default' }}
+                      >
                         <div style={{ width: 5, height: 5, borderRadius: '50%', background: cc.stroke, flexShrink: 0 }} />
-                        <span style={{ color: '#64748b', fontFamily: '"JetBrains Mono",monospace', fontSize: 9, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <span style={{
+                          color: '#64748b', fontFamily: '"JetBrains Mono",monospace', fontSize: 9,
+                          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}>
                           {child.label}
                         </span>
                       </div>
@@ -461,7 +558,11 @@ export function ClusterView({ graph }: { graph: RepoGraph }) {
               {node.patterns?.length > 0 && (
                 <div style={{ borderTop: `1px solid ${col.stroke}22`, padding: '6px 12px', display: 'flex', flexWrap: 'wrap', gap: 3 }}>
                   {node.patterns.slice(0, 2).map((p) => (
-                    <span key={p} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 3, color: '#334155', fontSize: 8, fontFamily: '"JetBrains Mono",monospace', padding: '1px 5px' }}>
+                    <span key={p} style={{
+                      background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)',
+                      borderRadius: 3, color: '#334155', fontSize: 8, fontFamily: '"JetBrains Mono",monospace',
+                      padding: '1px 5px',
+                    }}>
                       {p.replace(/_/g, ' ')}
                     </span>
                   ))}
@@ -486,7 +587,7 @@ const COL_LABELS: Record<number, string> = {
   3: 'components',
 }
 
-export function PipelineView({ graph }: { graph: RepoGraph }) {
+export function PipelineView({ graph, onNodeClick }: { graph: RepoGraph; onNodeClick?: (node: Node) => void }) {
   const [hovered, setHovered] = useState<string | null>(null)
 
   const CARD_W = 158, CARD_H = 54, COL_GAP = 72, ROW_GAP = 8, PAD = 24
@@ -533,7 +634,7 @@ export function PipelineView({ graph }: { graph: RepoGraph }) {
               />
               <text x={x + CARD_W / 2} y={17}
                 textAnchor="middle" dominantBaseline="central"
-                style={{ fill: '#334155', fontSize: 9, fontFamily: '"JetBrains Mono",monospace', textTransform: 'uppercase', letterSpacing: '0.07em' }}
+                style={{ fill: '#334155', fontSize: 9, fontFamily: '"JetBrains Mono",monospace', letterSpacing: '0.07em' }}
               >{COL_LABELS[col.depth] ?? 'depth ' + col.depth}</text>
             </g>
           )
@@ -553,7 +654,8 @@ export function PipelineView({ graph }: { graph: RepoGraph }) {
               d={`M ${x1} ${y1} C ${mx} ${y1} ${mx} ${y2} ${x2} ${y2}`}
               fill="none" stroke={col}
               strokeWidth={Math.max(0.7, edge.strength * 0.35)}
-              strokeDasharray={dash} opacity={0.4}
+              strokeDasharray={dash}
+              opacity={0.4}
             />
           )
         })}
@@ -564,7 +666,7 @@ export function PipelineView({ graph }: { graph: RepoGraph }) {
           if (!p) return null
           const col = nc(node.type)
           const hov = hovered === node.id
-          const lbl = node.label.length > 20 ? node.label.slice(0, 19) + '…' : node.label
+          const lbl  = node.label.length > 20 ? node.label.slice(0, 19) + '…' : node.label
           const role = node.detectedRole && node.detectedRole !== 'unknown'
             ? (node.detectedRole.length > 22 ? node.detectedRole.slice(0, 21) + '…' : node.detectedRole)
             : null
@@ -573,11 +675,13 @@ export function PipelineView({ graph }: { graph: RepoGraph }) {
             <g key={node.id}
               onMouseEnter={() => setHovered(node.id)}
               onMouseLeave={() => setHovered(null)}
-              style={{ cursor: 'default' }}
+              onClick={() => onNodeClick?.(node)}
+              style={{ cursor: onNodeClick ? 'pointer' : 'default' }}
             >
               <rect x={p.x} y={p.y} width={CARD_W} height={CARD_H} rx={6}
-                fill={hov ? col.bg.replace('0.12','0.3') : col.bg}
-                stroke={col.stroke} strokeWidth={hov ? 1.2 : 0.5}
+                fill={hov ? col.bg.replace('0.12', '0.3') : col.bg}
+                stroke={col.stroke}
+                strokeWidth={hov ? 1.2 : 0.5}
                 strokeOpacity={hov ? 1 : 0.6}
                 style={{ transition: 'fill 0.12s' }}
               />

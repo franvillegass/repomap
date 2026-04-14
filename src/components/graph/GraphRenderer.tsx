@@ -432,10 +432,45 @@ export default function GraphRenderer({ graph, onOverlayChange }: GraphRendererP
         {/* ── Alternative views — start below the badge (~220px) ── */}
         {viewType !== 'graph' && (
           <div style={{ position: 'absolute', inset: 0, paddingTop: 220, boxSizing: 'border-box' }}>
-            {viewType === 'onion'    && <OnionView    graph={graph} />}
-            {viewType === 'layers'   && <LayerStackView graph={graph} />}
-            {viewType === 'clusters' && <ClusterView  graph={graph} />}
-            {viewType === 'pipeline' && <PipelineView graph={graph} />}
+            {viewType === 'onion' && (
+  <OnionView
+    graph={graph}
+    onNodeClick={(n) => {
+      setSelectedId(n.id)
+      setSidebarTab('node')
+    }}
+  />
+)}
+
+{viewType === 'layers' && (
+  <LayerStackView
+    graph={graph}
+    onNodeClick={(n) => {
+      setSelectedId(n.id)
+      setSidebarTab('node')
+    }}
+  />
+)}
+
+{viewType === 'clusters' && (
+  <ClusterView
+    graph={graph}
+    onNodeClick={(n) => {
+      setSelectedId(n.id)
+      setSidebarTab('node')
+    }}
+  />
+)}
+
+{viewType === 'pipeline' && (
+  <PipelineView
+    graph={graph}
+    onNodeClick={(n) => {
+      setSelectedId(n.id)
+      setSidebarTab('node')
+    }}
+  />
+)}
           </div>
         )}
       </div>
