@@ -32,38 +32,34 @@ Return ONLY a JSON object with a "nodes" array. Do not include edges.`
 
 export function buildPass2EdgesPrompt(
   repoName: string,
-  nodes: Array<{ id: string; label: string; type: string }>,
-  sampledFileContents: string,
+  nodes: Array<{ id: string; label: string; type: string; files: string[] }>,
 ): string {
   const nodesJson = JSON.stringify(
-    nodes.map(n => ({ id: n.id, label: n.label, type: n.type })),
+    nodes.map(n => ({ id: n.id, label: n.label, type: n.type, files: n.files })),
     null,
     2
   )
 
-  return `You are analyzing the source code of a software repository to map its dependency edges.
+  return `You are mapping dependencies between modules in a software repository.
 
 REPOSITORY: ${repoName}
 
-NODES IN THE GRAPH:
+NODES:
 ${nodesJson}
 
-SOURCE FILES:
-${sampledFileContents}
-
-Your task: Identify all dependencies between the nodes listed above.
+Based on the node names, labels, file paths, and your knowledge of common software patterns, identify the most likely dependencies between these nodes.
 
 Edge classification:
-- "engineering": runtime behavioral dependency — direct calls, instantiations, data passing between concrete components
-- "architecture": structural design dependency — inheritance, interface implementation, composition, dependency injection
-- "both": edge that is clearly both simultaneously
+- "engineering": runtime behavioral dependency — direct calls, instantiations, data passing
+- "architecture": structural design dependency — inheritance, interface implementation, composition
+- "both": clearly both simultaneously
 
 For each edge:
 - id: format edge__<source>__<target>
 - source and target must be valid node IDs from the list above
-- strength (1–5): how central is this dependency (5 = system breaks without it)
-- confidence: "high" if unambiguous, "medium" if reasonable but debatable, "uncertain" if cannot determine
+- strength (1–5): how central is this dependency
+- confidence: "high", "medium", or "uncertain"
 - label: short verb phrase e.g. "calls", "implements", "depends on"
 
-Return ONLY a JSON object with an "edges" array. Do not include nodes.`
+Return ONLY a JSON object with an "edges" array. No markdown, no explanation.`
 }

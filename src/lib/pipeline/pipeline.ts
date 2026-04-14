@@ -58,8 +58,9 @@ export async function runAnalysisPipeline(input: PipelineInput): Promise<RepoGra
   const pass2Nodes = await callModelWithSchema(pass2NodesPrompt, Pass2NodesSchema)
 
   // --- Pass 2b: Edges ---
+  
   console.log('[Pipeline] Pass 2b: Edge mapping...')
-  const pass2EdgesPrompt = buildPass2EdgesPrompt(repoName, pass2Nodes.nodes, sampledContents)
+  const pass2EdgesPrompt = buildPass2EdgesPrompt(repoName, pass2Nodes.nodes)
   const pass2Edges = await callModelWithSchema(pass2EdgesPrompt, Pass2EdgesSchema)
 
   const pass2: Pass2Output = {
