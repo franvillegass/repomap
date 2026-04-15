@@ -1,17 +1,24 @@
 'use client'
 
 import { memo } from 'react'
-import { Handle, Position, BaseEdge, getSmoothStepPath } from '@xyflow/react'
+import {
+  Handle,
+  Position,
+  BaseEdge,
+  getSmoothStepPath,
+} from '@xyflow/react'
+
 import type { NodeProps, EdgeProps } from '@xyflow/react'
 import type { RFNodeData, RFEdgeData } from './graphLayout'
-import type { Node } from '@xyflow/react'
-import type { Edge } from '@xyflow/react'
 
 // ------------------------------------------------------------
-// Color palette
+// Colors
 // ------------------------------------------------------------
 
-const TYPE_COLORS: Record<string, { border: string; bg: string; badge: string }> = {
+const TYPE_COLORS: Record<
+  string,
+  { border: string; bg: string; badge: string }
+> = {
   layer: {
     border: '#60a5fa',
     bg: 'rgba(96,165,250,0.08)',
@@ -34,15 +41,30 @@ const TYPE_COLORS: Record<string, { border: string; bg: string; badge: string }>
   },
 }
 
-// ------------------------------------------------------------
-// Status tags
-// ------------------------------------------------------------
-
-const STATUS_TAG_COLORS: Record<string, { stripe: string; badge: string; label: string }> = {
-  legacy: { stripe: '#f59e0b', badge: 'rgba(245,158,11,0.15)', label: '#f59e0b' },
-  in_refactor: { stripe: '#3b82f6', badge: 'rgba(59,130,246,0.15)', label: '#60a5fa' },
-  stable: { stripe: '#10b981', badge: 'rgba(16,185,129,0.15)', label: '#34d399' },
-  deprecated: { stripe: '#ef4444', badge: 'rgba(239,68,68,0.15)', label: '#f87171' },
+const STATUS_TAG_COLORS: Record<
+  string,
+  { stripe: string; badge: string; label: string }
+> = {
+  legacy: {
+    stripe: '#f59e0b',
+    badge: 'rgba(245,158,11,0.15)',
+    label: '#f59e0b',
+  },
+  in_refactor: {
+    stripe: '#3b82f6',
+    badge: 'rgba(59,130,246,0.15)',
+    label: '#60a5fa',
+  },
+  stable: {
+    stripe: '#10b981',
+    badge: 'rgba(16,185,129,0.15)',
+    label: '#34d399',
+  },
+  deprecated: {
+    stripe: '#ef4444',
+    badge: 'rgba(239,68,68,0.15)',
+    label: '#f87171',
+  },
 }
 
 const STATUS_TAG_LABELS: Record<string, string> = {
@@ -51,10 +73,6 @@ const STATUS_TAG_LABELS: Record<string, string> = {
   stable: 'stable',
   deprecated: 'deprecated',
 }
-
-// ------------------------------------------------------------
-// Edge styles
-// ------------------------------------------------------------
 
 const EDGE_COLORS: Record<string, string> = {
   engineering: '#60a5fa',
@@ -69,103 +87,72 @@ const CONFIDENCE_STYLE: Record<string, string> = {
 }
 
 // ------------------------------------------------------------
-// RepoNode
+// NODE
 // ------------------------------------------------------------
 
 export const RepoNode = memo(function RepoNode(
-  { data, selected }: NodeProps<Node<RFNodeData>>
+  props: NodeProps<RFNodeData>
 ) {
+  const { data, selected } = props
+
   const colors = TYPE_COLORS[data.nodeType] ?? TYPE_COLORS.module
 
-  const statusTag = data.statusTag
+  const statusTag = data.statusTag as string | undefined
   const status = statusTag ? STATUS_TAG_COLORS[statusTag] : null
 
   return (
     <div
       style={{
         background: colors.bg,
-        border: `1.5px solid ${selected ? '#f9fafb' : colors.border}`,
+        border: `1.5px solid ${
+          selected ? '#f9fafb' : colors.border
+        }`,
         borderLeft: status
           ? `3.5px solid ${status.stripe}`
-          : `1.5px solid ${selected ? '#f9fafb' : colors.border}`,
+          : `1.5px solid ${colors.border}`,
         borderRadius: 10,
         padding: '10px 14px',
-        paddingLeft: status ? 12 : 14,
         minWidth: 180,
         maxWidth: 220,
-        boxShadow: selected
-          ? `0 0 0 2px ${colors.border}, 0 4px 20px rgba(0,0,0,0.4)`
-          : '0 2px 8px rgba(0,0,0,0.25)',
-        cursor: 'grab',
-        fontFamily: '"JetBrains Mono", monospace',
         position: 'relative',
+        fontFamily: '"JetBrains Mono", monospace',
+        cursor: 'grab',
       }}
     >
-      {/* Top row */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+      {/* header */}
+      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
         <span
           style={{
             fontSize: 10,
             fontWeight: 700,
             textTransform: 'uppercase',
             background: colors.badge,
-            color: '#f8fafc',
-            padding: '2px 7px',
+            color: '#fff',
+            padding: '2px 6px',
             borderRadius: 4,
           }}
         >
           {data.nodeType}
         </span>
 
-        {data.fileCount > 0 && (
-          <span style={{ fontSize: 10, color: '#94a3b8' }}>
-            {data.fileCount} {data.fileCount === 1 ? 'file' : 'files'}
-          </span>
-        )}
+        <span style={{ fontSize: 10, color: '#94a3b8' }}>
+          {data.fileCount} files
+        </span>
       </div>
 
-      {/* Label */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-        <div
-          style={{
-            fontSize: 13,
-            fontWeight: 600,
-            color: '#f1f5f9',
-            flex: 1,
-            overflow: 'hidden',
-            whiteSpace: 'nowrap',
-          }}
-          title={data.label}
-        >
-          {data.label}
-        </div>
-
-        {status && statusTag && (
-          <span
-            style={{
-              fontSize: 9,
-              fontWeight: 700,
-              textTransform: 'uppercase',
-              background: status.badge,
-              color: status.label,
-              padding: '1px 5px',
-              borderRadius: 3,
-              border: `1px solid ${status.stripe}`,
-            }}
-          >
-            {STATUS_TAG_LABELS[statusTag] ?? statusTag}
-          </span>
-        )}
+      {/* label */}
+      <div style={{ marginTop: 6, fontSize: 13, fontWeight: 600 }}>
+        {data.label}
       </div>
 
-      {/* Role */}
-      {data.detectedRole && data.detectedRole !== 'unknown' && (
+      {/* role */}
+      {data.detectedRole && (
         <div style={{ fontSize: 10, color: '#94a3b8' }}>
           {data.detectedRole}
         </div>
       )}
 
-      {/* Complexity */}
+      {/* complexity dot */}
       {data.complexity && (
         <div
           style={{
@@ -187,27 +174,29 @@ export const RepoNode = memo(function RepoNode(
 
       <Handle type="target" position={Position.Top} style={{ opacity: 0 }} />
       <Handle type="source" position={Position.Bottom} style={{ opacity: 0 }} />
-      <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
-      <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
     </div>
   )
 })
 
 // ------------------------------------------------------------
-// RepoEdge
+// EDGE
 // ------------------------------------------------------------
 
-export const RepoEdge = memo(function RepoEdge({
-  id,
-  sourceX,
-  sourceY,
-  targetX,
-  targetY,
-  sourcePosition,
-  targetPosition,
-  data,
-  markerEnd,
-}: EdgeProps<Edge<RFEdgeData>>) {
+export const RepoEdge = memo(function RepoEdge(
+  props: EdgeProps<RFEdgeData>
+) {
+  const {
+    id,
+    sourceX,
+    sourceY,
+    targetX,
+    targetY,
+    sourcePosition,
+    targetPosition,
+    data,
+    markerEnd,
+  } = props
+
   const [edgePath] = getSmoothStepPath({
     sourceX,
     sourceY,
@@ -221,14 +210,12 @@ export const RepoEdge = memo(function RepoEdge({
   if (!data) return null
 
   const color = EDGE_COLORS[data.edgeType] ?? '#64748b'
-  const dashStyle = CONFIDENCE_STYLE[data.confidence]
-  const opacity = data.confidence === 'uncertain' ? 0.45 : 0.8
-  const width = Math.max(1, data.strength * 0.6)
+  const style = CONFIDENCE_STYLE[data.confidence] ?? 'solid'
 
   const strokeDasharray =
-    dashStyle === 'dashed'
+    style === 'dashed'
       ? '6,4'
-      : dashStyle === 'dotted'
+      : style === 'dotted'
       ? '2,4'
       : undefined
 
@@ -239,9 +226,9 @@ export const RepoEdge = memo(function RepoEdge({
       markerEnd={markerEnd}
       style={{
         stroke: color,
-        strokeWidth: width,
+        strokeWidth: Math.max(1, data.strength * 0.6),
         strokeDasharray,
-        opacity,
+        opacity: data.confidence === 'uncertain' ? 0.45 : 0.8,
       }}
     />
   )

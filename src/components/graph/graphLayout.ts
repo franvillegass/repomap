@@ -1,25 +1,54 @@
+'use client'
+
 import type { Node as RFNode, Edge as RFEdge } from '@xyflow/react'
-import type { RepoGraph, Node, Edge, LayoutTemplate } from '@/lib/pipeline/schemas/graph'
+import type {
+  RepoGraph,
+  Node,
+  Edge,
+  LayoutTemplate,
+} from '@/lib/pipeline/schemas/graph'
 
 // ------------------------------------------------------------
-// Types
+// React Flow Data Types (FIX CRÍTICO)
 // ------------------------------------------------------------
 
-export interface RFNodeData extends Record<string, unknown> {
+const TYPE_COLORS = {
+  layer: true,
+  module: true,
+  file: true,
+  component: true,
+} as const
+
+const EDGE_COLORS = {
+  engineering: true,
+  architecture: true,
+  both: true,
+} as const
+
+const CONFIDENCE_VALUES = {
+  high: true,
+  medium: true,
+  uncertain: true,
+} as const
+
+export type NodeType = keyof typeof TYPE_COLORS
+export type EdgeType = keyof typeof EDGE_COLORS
+export type Confidence = keyof typeof CONFIDENCE_VALUES
+
+export interface RFNodeData {
   label: string
-  nodeType: 'layer' | 'module' | 'file' | 'component'
+  nodeType: NodeType
   detectedRole: string
   patterns: string[]
   fileCount: number
   complexity?: 'low' | 'medium' | 'high'
   depth: number
-
   statusTag?: 'legacy' | 'in_refactor' | 'stable' | 'deprecated'
 }
 
-export interface RFEdgeData extends Record<string, unknown> {
-  edgeType: 'engineering' | 'architecture' | 'both'
-  confidence: 'high' | 'medium' | 'uncertain'
+export interface RFEdgeData {
+  edgeType: EdgeType
+  confidence: Confidence
   strength: number
 }
 
@@ -33,7 +62,6 @@ export function buildReactFlowGraph(graph: RepoGraph): {
 } {
   const { nodes, edges, overlay, meta } = graph
 
-  // Merge overlay overrides
   const mergedNodes: Node[] = nodes.map((n) => {
     const ov = overlay.nodeOverrides[n.id]
     return ov ? { ...n, label: ov.customLabel ?? n.label } : n
@@ -42,52 +70,41 @@ export function buildReactFlowGraph(graph: RepoGraph): {
   const allNodes = [...mergedNodes, ...overlay.manualNodes]
   const allEdges = [...edges, ...overlay.manualEdges]
 
-  // Filter hidden edges
-  const visibleEdges = allEdges.filter((e) => !overlay.edgeOverrides[e.id]?.hidden)
+  const visibleEdges = allEdges.filter(
+    (e) => !overlay.edgeOverrides[e.id]?.hidden
+  )
 
   const positions = computePositions(allNodes, meta.layoutTemplate)
 
   const rfNodes: RFNode<RFNodeData>[] = allNodes.map((node) => ({
-  id: node.id,
-  type: 'repoNode',
-  position: positions[node.id] ?? { x: 0, y: 0 },
-
-  data: {
-    label: node.label,
-
-    // 🔥 PASO 2 (ACÁ VA EL FIX)
-    nodeType: node.type as 'layer' | 'module' | 'file' | 'component',
-
-    detectedRole: node.detectedRole,
-    patterns: node.patterns,
-    fileCount: node.files.length,
-
-    // importante: evitar undefined
-    complexity: node.metadata.complexity ?? 'low',
-
-    depth: node.depth,
-
-    // 🔥 ESTE ES EL QUE TE FALTABA
-    statusTag: node.metadata.statusTag ?? 'stable',
-  },
-}))
+    id: node.id,
+    type: 'repoNode',
+    position: positions[node.id] ?? { x: 0, y: 0 },
+    data: {
+      label: node.label,
+      nodeType: node.type as NodeType,
+      detectedRole: node.detectedRole,
+      patterns: node.patterns,
+      fileCount: node.files.length,
+      complexity: node.metadata.complexity,
+      depth: node.depth,
+    },
+  }))
 
   const rfEdges: RFEdge<RFEdgeData>[] = visibleEdges.map((edge) => {
     const ov = overlay.edgeOverrides[edge.id]
+
     return {
-      id:     edge.id,
+      id: edge.id,
       source: edge.source,
       target: edge.target,
-      type:   'repoEdge',
-      label:  ov?.customLabel ?? edge.label,
+      type: 'repoEdge',
+      label: ov?.customLabel ?? edge.label,
       data: {
-  edgeType: (ov?.customEdgeType ?? edge.edgeType) as
-    'engineering' | 'architecture' | 'both',
-
-  confidence: edge.confidence,
-
-  strength: edge.strength,
-}
+        edgeType: (ov?.customEdgeType ?? edge.edgeType) as EdgeType,
+        confidence: edge.confidence as Confidence,
+        strength: edge.strength,
+      },
     }
   })
 
@@ -95,30 +112,35 @@ export function buildReactFlowGraph(graph: RepoGraph): {
 }
 
 // ------------------------------------------------------------
-// Position computation per layout template
+// Layouts (UNCHANGED)
 // ------------------------------------------------------------
 
-const NODE_WIDTH  = 200
+const NODE_WIDTH = 200
 const NODE_HEIGHT = 80
-const H_GAP       = 60
-const V_GAP       = 80
+const H_GAP = 60
+const V_GAP = 80
 
 function computePositions(
   nodes: Node[],
-  layout: LayoutTemplate,
+  layout: LayoutTemplate
 ): Record<string, { x: number; y: number }> {
   switch (layout) {
-    case 'vertical_layers':       return verticalLayers(nodes)
-    case 'horizontal_three_column': return horizontalThreeColumn(nodes)
-    case 'concentric_rings':      return concentricRings(nodes)
-    case 'left_right_flow':       return leftRightFlow(nodes)
-    case 'grid_clusters':         return gridClusters(nodes)
-    case 'cluster':               return gridClusters(nodes)   // similar enough for Phase 1
-    case 'force_directed':
+    case 'vertical_layers':
+      return verticalLayers(nodes)
+    case 'horizontal_three_column':
+      return horizontalThreeColumn(nodes)
+    case 'concentric_rings':
+      return concentricRings(nodes)
+    case 'left_right_flow':
+      return leftRightFlow(nodes)
+    case 'grid_clusters':
+    case 'cluster':
+      return gridClusters(nodes)
     default:
       return forceDirectedSeed(nodes)
   }
 }
+
 
 // --- vertical_layers: rows per depth level ---
 function verticalLayers(nodes: Node[]): Record<string, { x: number; y: number }> {

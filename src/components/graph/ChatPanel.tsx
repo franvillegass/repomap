@@ -172,7 +172,9 @@ function ChatInner({ graph, initialMessages, onClose }: {
   // FIX 1: body estable — nunca cambia de referencia después del mount
   const graphRef = useRef(graph)
   useEffect(() => { graphRef.current = graph }, [graph])
-  const chatBody = useMemo(() => ({ get graph() { return graphRef.current } }), [])
+  const chatBody = useMemo(() => ({
+  graph,
+}), [graph])
 
   const { messages, input, handleInputChange, handleSubmit, isLoading, error, setInput, reload } = useChat({
     api:            '/api/chat',
@@ -230,20 +232,26 @@ function ChatInner({ graph, initialMessages, onClose }: {
           </div>
         )}
 
-        {messages.map((m) =>
-          m.role === 'user' ? (
-            <div key={m.id} style={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <div style={userBubble}>{m.content}</div>
-            </div>
-          ) : (
-            <div key={m.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-              <div style={aiBadge}>AI</div>
-              <div style={{ flex: 1, minWidth: 0, fontSize: 12, lineHeight: 1.6 }}>
-                <MarkdownContent text={m.content} />
-              </div>
-            </div>
-          )
-        )}
+        {messages.map((m) => {
+  const isUser = m.role === 'user'
+
+  if (isUser) {
+    return (
+      <div key={m.id} style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <div style={userBubble}>{m.content}</div>
+      </div>
+    )
+  }
+
+  return (
+    <div key={m.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+      <div style={aiBadge}>AI</div>
+      <div style={{ flex: 1, minWidth: 0, fontSize: 12, lineHeight: 1.6 }}>
+        <MarkdownContent text={m.content} />
+      </div>
+    </div>
+  )
+})}
 
         {isLoading && (
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
