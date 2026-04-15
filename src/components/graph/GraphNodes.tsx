@@ -1,6 +1,6 @@
 'use client'
 
-import { memo } from 'react'
+import { memo, useState } from 'react'
 import {
   Handle,
   Position,
@@ -15,7 +15,7 @@ import type { RFNodeData, RFEdgeData } from './graphLayout'
 // Colors
 // ------------------------------------------------------------
 
-const TYPE_COLORS: Record<
+const TYPE_COLORS: Record <
   string,
   { border: string; bg: string; badge: string }
 > = {
@@ -41,7 +41,7 @@ const TYPE_COLORS: Record<
   },
 }
 
-const STATUS_TAG_COLORS: Record<
+const STATUS_TAG_COLORS: Record <
   string,
   { stripe: string; badge: string; label: string }
 > = {
@@ -67,13 +67,6 @@ const STATUS_TAG_COLORS: Record<
   },
 }
 
-const STATUS_TAG_LABELS: Record<string, string> = {
-  legacy: 'legacy',
-  in_refactor: 'refactor',
-  stable: 'stable',
-  deprecated: 'deprecated',
-}
-
 const EDGE_COLORS: Record<string, string> = {
   engineering: '#60a5fa',
   architecture: '#c084fc',
@@ -94,33 +87,38 @@ export const RepoNode = memo(function RepoNode(
   props: NodeProps<RFNodeData>
 ) {
   const { data, selected } = props
+  const [expanded, setExpanded] = useState(false)
 
   const colors = TYPE_COLORS[data.nodeType] ?? TYPE_COLORS.module
-
   const statusTag = data.statusTag as string | undefined
   const status = statusTag ? STATUS_TAG_COLORS[statusTag] : null
+
+  // Solo módulos y capas pueden expandir — los file nodes no tienen hijos
+  const canExpand =
+    (data.nodeType === 'module' || data.nodeType === 'layer') &&
+    Array.isArray(data.files) &&
+    data.files.length > 0
 
   return (
     <div
       style={{
         background: colors.bg,
-        border: `1.5px solid ${
-          selected ? '#f9fafb' : colors.border
-        }`,
+        border: `1.5px solid ${selected ? '#f9fafb' : colors.border}`,
         borderLeft: status
           ? `3.5px solid ${status.stripe}`
           : `1.5px solid ${colors.border}`,
         borderRadius: 10,
         padding: '10px 14px',
         minWidth: 180,
-        maxWidth: 220,
+        maxWidth: 260,
         position: 'relative',
         fontFamily: '"JetBrains Mono", monospace',
         cursor: 'grab',
+        transition: 'max-height 0.2s ease',
       }}
     >
       {/* header */}
-      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <span
           style={{
             fontSize: 10,
@@ -135,9 +133,35 @@ export const RepoNode = memo(function RepoNode(
           {data.nodeType}
         </span>
 
-        <span style={{ fontSize: 10, color: '#94a3b8' }}>
-          {data.fileCount} files
-        </span>
+        {/* Botón expand/collapse — solo para module y layer */}
+        {canExpand ? (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              setExpanded((prev) => !prev)
+            }}
+            style={{
+              fontSize: 10,
+              color: expanded ? colors.border : '#94a3b8',
+              background: expanded ? `${colors.bg}` : 'transparent',
+              border: `1px solid ${expanded ? colors.border : '#334155'}`,
+              borderRadius: 4,
+              padding: '2px 6px',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 3,
+              transition: 'all 0.15s ease',
+            }}
+          >
+            <span style={{ fontSize: 9 }}>{expanded ? '▲' : '▼'}</span>
+            {data.fileCount} files
+          </button>
+        ) : (
+          <span style={{ fontSize: 10, color: '#94a3b8' }}>
+            {data.fileCount} files
+          </span>
+        )}
       </div>
 
       {/* label */}
@@ -170,6 +194,49 @@ export const RepoNode = memo(function RepoNode(
                 : '#4ade80',
           }}
         />
+      )}
+
+      {/* Lista de archivos — solo visible cuando expanded */}
+      {expanded && canExpand && (
+        <div
+          style={{
+            marginTop: 8,
+            borderTop: `1px solid ${colors.border}30`,
+            paddingTop: 6,
+          }}
+        >
+          <ul
+            style={{
+              listStyle: 'none',
+              margin: 0,
+              padding: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 2,
+            }}
+          >
+            {(data.files as string[]).map((file) => (
+              <li
+                key={file}
+                style={{
+                  fontSize: 9,
+                  color: '#94a3b8',
+                  padding: '2px 4px',
+                  borderRadius: 3,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  background: 'rgba(255,255,255,0.03)',
+                }}
+                title={file}
+              >
+                {/* Mostrar solo el filename, no el path completo */}
+                {'› '}
+                {file.split('/').pop()}
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
 
       <Handle type="target" position={Position.Top} style={{ opacity: 0 }} />
@@ -211,13 +278,8 @@ export const RepoEdge = memo(function RepoEdge(
 
   const color = EDGE_COLORS[data.edgeType] ?? '#64748b'
   const style = CONFIDENCE_STYLE[data.confidence] ?? 'solid'
-
   const strokeDasharray =
-    style === 'dashed'
-      ? '6,4'
-      : style === 'dotted'
-      ? '2,4'
-      : undefined
+    style === 'dashed' ? '6,4' : style === 'dotted' ? '2,4' : undefined
 
   return (
     <BaseEdge

@@ -41,6 +41,7 @@ export interface RFNodeData {
   detectedRole: string
   patterns: string[]
   fileCount: number
+  files?: string[] 
   complexity?: 'low' | 'medium' | 'high'
   depth: number
   statusTag?: 'legacy' | 'in_refactor' | 'stable' | 'deprecated'
@@ -86,6 +87,7 @@ export function buildReactFlowGraph(graph: RepoGraph): {
       detectedRole: node.detectedRole,
       patterns: node.patterns,
       fileCount: node.files.length,
+      files: node.files,
       complexity: node.metadata.complexity,
       depth: node.depth,
     },

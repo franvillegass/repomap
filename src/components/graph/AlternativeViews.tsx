@@ -89,7 +89,11 @@ const NCOLORS: Record<string, { bg: string; stroke: string; text: string }> = {
 }
 const nc = (type: string) => NCOLORS[type] ?? NCOLORS.module
 
-function HoverCard({ node }: { node: Node }) {
+// ─────────────────────────────────────────────────────────────
+// HoverCard — shared, supports showFiles
+// ─────────────────────────────────────────────────────────────
+
+function HoverCard({ node, showFiles }: { node: Node; showFiles?: boolean }) {
   const col = nc(node.type)
   return (
     <div style={{
@@ -97,18 +101,27 @@ function HoverCard({ node }: { node: Node }) {
       background: 'rgba(8,14,26,0.97)', border: '1px solid #1e293b', borderRadius: 8,
       padding: '8px 14px', fontSize: 11, fontFamily: '"JetBrains Mono",monospace',
       pointerEvents: 'none', whiteSpace: 'nowrap', zIndex: 20,
-      display: 'flex', gap: 8, alignItems: 'center',
+      display: 'flex', flexDirection: 'column', gap: 4,
     }}>
-      <span style={{ color: col.text, fontWeight: 700 }}>{node.label}</span>
-      <span style={{ color: '#334155' }}>·</span>
-      <span style={{ color: '#475569' }}>{node.type}</span>
-      {node.detectedRole && node.detectedRole !== 'unknown' && (
-        <><span style={{ color: '#334155' }}>·</span>
-        <span style={{ color: '#334155' }}>{node.detectedRole}</span></>
-      )}
-      {node.files.length > 0 && (
-        <><span style={{ color: '#334155' }}>·</span>
-        <span style={{ color: '#334155' }}>{node.files.length} files</span></>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <span style={{ color: col.text, fontWeight: 700 }}>{node.label}</span>
+        <span style={{ color: '#334155' }}>·</span>
+        <span style={{ color: '#475569' }}>{node.type}</span>
+        {node.detectedRole && node.detectedRole !== 'unknown' && (
+          <><span style={{ color: '#334155' }}>·</span>
+          <span style={{ color: '#334155' }}>{node.detectedRole}</span></>
+        )}
+        {node.files.length > 0 && (
+          <><span style={{ color: '#334155' }}>·</span>
+          <span style={{ color: '#334155' }}>{node.files.length} files</span></>
+        )}
+      </div>
+      {showFiles && node.files.length > 0 && (
+        <div style={{ borderTop: '1px solid #1e293b', paddingTop: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          {node.files.map(f => (
+            <span key={f} style={{ color: '#475569', fontSize: 9 }}>› {f.split('/').pop()}</span>
+          ))}
+        </div>
       )}
     </div>
   )
@@ -139,9 +152,10 @@ function arcPath(cx: number, cy: number, ri: number, ro: number, a1: number, a2:
 }
 
 export function OnionView({ graph, onNodeClick }: { graph: RepoGraph; onNodeClick?: (node: Node) => void }) {
-  const [hovered, setHovered]     = useState<string | null>(null)
+  const [hovered,   setHovered]   = useState<string | null>(null)
+  const [expanded,  setExpanded]  = useState<string | null>(null)
   const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 })
-  const dragging = useRef<{ startX: number; startY: number; ox: number; oy: number } | null>(null)
+  const dragging   = useRef<{ startX: number; startY: number; ox: number; oy: number } | null>(null)
   const isDragging = useRef(false)
   const CX = 290, CY = 295
 
@@ -232,6 +246,7 @@ export function OnionView({ graph, onNodeClick }: { graph: RepoGraph; onNodeClic
               const path   = arcPath(CX, CY, ring.inner, ring.outer, a1, a2)
               const col    = nc(node.type)
               const hov    = hovered === node.id
+              const isExp  = expanded === node.id
               const arcLen = midR * angle
               const maxCh  = Math.max(3, Math.floor(arcLen / 7))
               const lbl    = node.label.length > maxCh ? node.label.slice(0, maxCh - 1) + '…' : node.label
@@ -242,14 +257,19 @@ export function OnionView({ graph, onNodeClick }: { graph: RepoGraph; onNodeClic
                 <g key={node.id} data-node="1"
                   onMouseEnter={() => setHovered(node.id)}
                   onMouseLeave={() => setHovered(null)}
-                  onClick={() => { if (!isDragging.current) onNodeClick?.(node) }}
-                  style={{ cursor: onNodeClick ? 'pointer' : 'default' }}
+                  onClick={() => {
+                    if (!isDragging.current) {
+                      setExpanded(prev => prev === node.id ? null : node.id)
+                      onNodeClick?.(node)
+                    }
+                  }}
+                  style={{ cursor: 'pointer' }}
                 >
                   <path d={path}
-                    fill={hov ? col.bg.replace('0.12', '0.32') : col.bg}
+                    fill={isExp ? col.bg.replace('0.12', '0.4') : hov ? col.bg.replace('0.12', '0.32') : col.bg}
                     stroke={stroke}
-                    strokeWidth={hov ? 1.4 : 0.5}
-                    strokeOpacity={hov ? 0.9 : 0.55}
+                    strokeWidth={isExp ? 1.8 : hov ? 1.4 : 0.5}
+                    strokeOpacity={isExp ? 1 : hov ? 0.9 : 0.55}
                     style={{ transition: 'fill 0.12s' }}
                   />
                   {arcLen > 30 && (
@@ -260,7 +280,7 @@ export function OnionView({ graph, onNodeClick }: { graph: RepoGraph; onNodeClic
                         fill:          col.text,
                         fontSize:      Math.min(11, Math.max(7, (ring.outer - ring.inner) * 0.22)),
                         fontFamily:    '"JetBrains Mono",monospace',
-                        opacity:       hov ? 1 : 0.85,
+                        opacity:       hov || isExp ? 1 : 0.85,
                         pointerEvents: 'none',
                       }}
                     >{lbl}</text>
@@ -304,7 +324,8 @@ export function OnionView({ graph, onNodeClick }: { graph: RepoGraph; onNodeClic
           ))}
         </div>
 
-        {hovNode && <HoverCard node={hovNode} />}
+        {/* HoverCard with file list when expanded */}
+        {hovNode && <HoverCard node={hovNode} showFiles={expanded === hovNode.id} />}
       </div>
 
       {/* Footer legend */}
@@ -317,6 +338,9 @@ export function OnionView({ graph, onNodeClick }: { graph: RepoGraph; onNodeClic
             </span>
           </div>
         ))}
+        <div style={{ marginLeft: 'auto', fontSize: 9, color: '#334155', fontFamily: '"JetBrains Mono",monospace' }}>
+          click segment to expand files
+        </div>
       </div>
     </div>
   )
@@ -327,7 +351,10 @@ export function OnionView({ graph, onNodeClick }: { graph: RepoGraph; onNodeClic
 // ─────────────────────────────────────────────────────────────
 
 export function LayerStackView({ graph, onNodeClick }: { graph: RepoGraph; onNodeClick?: (node: Node) => void }) {
-  const [hovered, setHovered] = useState<string | null>(null)
+  const [hovered,  setHovered]  = useState<string | null>(null)
+  const [expanded, setExpanded] = useState<string | null>(null)
+
+  const toggleExpanded = (id: string) => setExpanded(prev => prev === id ? null : id)
 
   const bands = useMemo(() => {
     const layerNodes = graph.nodes.filter((n) => n.type === 'layer')
@@ -404,6 +431,9 @@ export function LayerStackView({ graph, onNodeClick }: { graph: RepoGraph; onNod
                   {band.children.map((child) => {
                     const cc  = nc(child.type)
                     const hov = hovered === child.id
+                    const isExp = expanded === child.id
+                    const canExp = (child.type === 'module' || child.type === 'layer') && child.files.length > 0
+
                     return (
                       <div key={child.id}
                         onMouseEnter={() => setHovered(child.id)}
@@ -422,9 +452,33 @@ export function LayerStackView({ graph, onNodeClick }: { graph: RepoGraph; onNod
                           transition:   'all 0.12s',
                         }}
                       >
-                        {child.label}
-                        {child.files.length > 1 && (
-                          <span style={{ color: '#475569', marginLeft: 4, fontSize: 9 }}>({child.files.length})</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <span>{child.label}</span>
+                          {canExp && (
+                            <span
+                              onClick={(e) => { e.stopPropagation(); toggleExpanded(child.id) }}
+                              style={{
+                                color: isExp ? cc.stroke : '#475569',
+                                fontSize: 9,
+                                cursor: 'pointer',
+                                border: `1px solid ${isExp ? cc.stroke : '#334155'}`,
+                                borderRadius: 3,
+                                padding: '0px 3px',
+                                lineHeight: '14px',
+                              }}
+                            >
+                              {child.files.length}{isExp ? ' ▲' : ' ▼'}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* File list — only when expanded */}
+                        {isExp && (
+                          <div style={{ marginTop: 5, borderTop: `1px solid ${cc.stroke}33`, paddingTop: 4, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                            {child.files.map(f => (
+                              <span key={f} style={{ color: '#64748b', fontSize: 8 }}>› {f.split('/').pop()}</span>
+                            ))}
+                          </div>
                         )}
                       </div>
                     )
@@ -456,7 +510,10 @@ export function LayerStackView({ graph, onNodeClick }: { graph: RepoGraph; onNod
 // ─────────────────────────────────────────────────────────────
 
 export function ClusterView({ graph, onNodeClick }: { graph: RepoGraph; onNodeClick?: (node: Node) => void }) {
-  const [hovered, setHovered] = useState<string | null>(null)
+  const [hovered,  setHovered]  = useState<string | null>(null)
+  const [expanded, setExpanded] = useState<string | null>(null)
+
+  const toggleExpanded = (id: string) => setExpanded(prev => prev === id ? null : id)
 
   const clusters = useMemo(() => {
     const topIds = new Set(
@@ -480,8 +537,11 @@ export function ClusterView({ graph, onNodeClick }: { graph: RepoGraph; onNodeCl
     <div style={{ width: '100%', height: '100%', overflowY: 'auto', padding: '0 24px 24px', boxSizing: 'border-box' }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 10 }}>
         {clusters.map(({ node, children, edgesOut, edgesIn }) => {
-          const col = nc(node.type)
-          const hov = hovered === node.id
+          const col    = nc(node.type)
+          const hov    = hovered === node.id
+          const isExp  = expanded === node.id
+          const canExp = node.files.length > 0
+
           return (
             <div key={node.id}
               onMouseEnter={() => setHovered(node.id)}
@@ -517,14 +577,39 @@ export function ClusterView({ graph, onNodeClick }: { graph: RepoGraph; onNodeCl
                     {node.detectedRole}
                   </div>
                 )}
-                <div style={{ display: 'flex', gap: 8, marginTop: 7 }}>
+                <div style={{ display: 'flex', gap: 8, marginTop: 7, alignItems: 'center' }}>
                   <span title="Incoming connections" style={{ color: '#334155', fontSize: 9, fontFamily: '"JetBrains Mono",monospace' }}>↓{edgesIn}</span>
                   <span title="Outgoing connections" style={{ color: '#334155', fontSize: 9, fontFamily: '"JetBrains Mono",monospace' }}>↑{edgesOut}</span>
-                  {node.files.length > 0 && (
-                    <span style={{ color: '#334155', fontSize: 9, fontFamily: '"JetBrains Mono",monospace' }}>{node.files.length} files</span>
+                  {canExp && (
+                    <span
+                      onClick={(e) => { e.stopPropagation(); toggleExpanded(node.id) }}
+                      style={{
+                        color:        isExp ? col.text : '#475569',
+                        fontSize:     9,
+                        fontFamily:   '"JetBrains Mono",monospace',
+                        cursor:       'pointer',
+                        border:       `1px solid ${isExp ? col.stroke : '#334155'}`,
+                        borderRadius: 3,
+                        padding:      '1px 5px',
+                        transition:   'all 0.12s',
+                      }}
+                    >
+                      {node.files.length} files {isExp ? '▲' : '▼'}
+                    </span>
                   )}
                 </div>
               </div>
+
+              {/* Expanded file list */}
+              {isExp && (
+                <div style={{ padding: '6px 12px', borderBottom: `1px solid ${col.stroke}22`, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  {node.files.map(f => (
+                    <span key={f} style={{ color: '#475569', fontSize: 8, fontFamily: '"JetBrains Mono",monospace' }}>
+                      › {f.split('/').pop()}
+                    </span>
+                  ))}
+                </div>
+              )}
 
               {/* Children list */}
               {children.length > 0 && (
@@ -588,7 +673,8 @@ const COL_LABELS: Record<number, string> = {
 }
 
 export function PipelineView({ graph, onNodeClick }: { graph: RepoGraph; onNodeClick?: (node: Node) => void }) {
-  const [hovered, setHovered] = useState<string | null>(null)
+  const [hovered,  setHovered]  = useState<string | null>(null)
+  const [expanded, setExpanded] = useState<string | null>(null)
 
   const CARD_W = 158, CARD_H = 54, COL_GAP = 72, ROW_GAP = 8, PAD = 24
 
@@ -662,12 +748,14 @@ export function PipelineView({ graph, onNodeClick }: { graph: RepoGraph; onNodeC
 
         {/* Node cards */}
         {graph.nodes.map((node) => {
-          const p = positions[node.id]
+          const p     = positions[node.id]
           if (!p) return null
-          const col = nc(node.type)
-          const hov = hovered === node.id
-          const lbl  = node.label.length > 20 ? node.label.slice(0, 19) + '…' : node.label
-          const role = node.detectedRole && node.detectedRole !== 'unknown'
+          const col   = nc(node.type)
+          const hov   = hovered === node.id
+          const isExp = expanded === node.id
+          const canExp = (node.type === 'module' || node.type === 'layer') && node.files.length > 0
+          const lbl   = node.label.length > 20 ? node.label.slice(0, 19) + '…' : node.label
+          const role  = node.detectedRole && node.detectedRole !== 'unknown'
             ? (node.detectedRole.length > 22 ? node.detectedRole.slice(0, 21) + '…' : node.detectedRole)
             : null
 
@@ -675,14 +763,17 @@ export function PipelineView({ graph, onNodeClick }: { graph: RepoGraph; onNodeC
             <g key={node.id}
               onMouseEnter={() => setHovered(node.id)}
               onMouseLeave={() => setHovered(null)}
-              onClick={() => onNodeClick?.(node)}
-              style={{ cursor: onNodeClick ? 'pointer' : 'default' }}
+              onClick={() => {
+                if (canExp) setExpanded(prev => prev === node.id ? null : node.id)
+                onNodeClick?.(node)
+              }}
+              style={{ cursor: 'pointer' }}
             >
               <rect x={p.x} y={p.y} width={CARD_W} height={CARD_H} rx={6}
-                fill={hov ? col.bg.replace('0.12', '0.3') : col.bg}
+                fill={isExp ? col.bg.replace('0.12', '0.35') : hov ? col.bg.replace('0.12', '0.3') : col.bg}
                 stroke={col.stroke}
-                strokeWidth={hov ? 1.2 : 0.5}
-                strokeOpacity={hov ? 1 : 0.6}
+                strokeWidth={isExp ? 1.5 : hov ? 1.2 : 0.5}
+                strokeOpacity={isExp ? 1 : hov ? 1 : 0.6}
                 style={{ transition: 'fill 0.12s' }}
               />
               <text x={p.x + 10} y={p.y + 19}
@@ -696,15 +787,20 @@ export function PipelineView({ graph, onNodeClick }: { graph: RepoGraph; onNodeC
               {node.files.length > 0 && (
                 <text x={p.x + CARD_W - 7} y={p.y + CARD_H - 7}
                   textAnchor="end"
-                  style={{ fill: '#334155', fontSize: 8, fontFamily: '"JetBrains Mono",monospace' }}
-                >{node.files.length}f</text>
+                  style={{
+                    fill: isExp ? col.text : '#334155',
+                    fontSize: 8,
+                    fontFamily: '"JetBrains Mono",monospace',
+                  }}
+                >{node.files.length}f {canExp ? (isExp ? '▲' : '▼') : ''}</text>
               )}
             </g>
           )
         })}
       </svg>
 
-      {hovNode && <HoverCard node={hovNode} />}
+      {/* HoverCard with file list when expanded */}
+      {hovNode && <HoverCard node={hovNode} showFiles={expanded === hovNode.id} />}
     </div>
   )
 }
