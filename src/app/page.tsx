@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import type { RepoGraph, GraphMeta } from '@/lib/pipeline/schemas/graph'
 import { saveGraph, loadGraph, listGraphs, deleteGraph } from '@/lib/storage/graphStore'
+import { BranchProvider } from '../../src/branches/UseBranches'
 
 const GraphRenderer = dynamic(
   () => import('@/components/graph/GraphRenderer'),
@@ -49,27 +50,23 @@ export default function Page() {
 
   const abortRef = useRef<AbortController | null>(null)
 
-  // Load history from IndexedDB on mount
   useEffect(() => {
     listGraphs().then(setHistory).catch(() => {})
   }, [])
 
   useEffect(() => () => { abortRef.current?.abort() }, [])
 
-  // --- Load a saved graph ---
   async function handleLoadSaved(repoUrl: string) {
     const saved = await loadGraph(repoUrl)
     if (saved) { setGraph(saved); setStatus('success') }
   }
 
-  // --- Delete a saved graph ---
   async function handleDelete(repoUrl: string, e: React.MouseEvent) {
     e.stopPropagation()
     await deleteGraph(repoUrl)
     setHistory((prev) => prev.filter((m) => m.repoUrl !== repoUrl))
   }
 
-  // --- Analyze ---
   async function handleAnalyze() {
     const trimmed = url.trim()
     if (!trimmed) return
@@ -102,7 +99,6 @@ export default function Page() {
 
       const data: RepoGraph = await res.json()
 
-      // Persist and refresh history
       await saveGraph(data)
       const updated = await listGraphs()
       setHistory(updated)
@@ -127,13 +123,16 @@ export default function Page() {
     setSteps(PASS_STEPS.map((s) => ({ ...s, state: 'pending' })))
   }
 
-  // --- Success: full-screen graph ---
   if (status === 'success' && graph) {
     return (
-      <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
-        <GraphRenderer graph={graph} />
-        <button onClick={handleReset} style={resetButtonStyle}>← new repo</button>
-      </div>
+      <BranchProvider baseGraph={graph}>
+        <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
+          <GraphRenderer graph={graph} />
+          <button onClick={handleReset} style={resetButtonStyle}>
+            ← new repo
+          </button>
+        </div>
+      </BranchProvider>
     )
   }
 
@@ -142,7 +141,6 @@ export default function Page() {
       <GridBackground />
 
       <div style={cardStyle}>
-        {/* Logo */}
         <div style={{ marginBottom: 28, animation: 'fadeUp 0.4s ease both' }}>
           <div style={logoStyle}>
             <span style={{ color: '#3b82f6' }}>{'{'}</span>
@@ -176,6 +174,8 @@ export default function Page() {
     </div>
   )
 }
+
+// (resto del archivo igual, sin cambios)
 
 // ------------------------------------------------------------
 // InputForm
