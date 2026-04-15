@@ -247,7 +247,9 @@ function ChatInner({ graph, initialMessages, onClose }: {
     <div key={m.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
       <div style={aiBadge}>AI</div>
       <div style={{ flex: 1, minWidth: 0, fontSize: 12, lineHeight: 1.6 }}>
-        <MarkdownContent text={m.content} />
+        <div style={{ whiteSpace: 'pre-wrap' }}>
+  {m.content}
+</div>
       </div>
     </div>
   )
