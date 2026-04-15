@@ -5,6 +5,7 @@ import type { RepoGraph } from '@/lib/pipeline/schemas/graph'
 import { anthropic } from '@ai-sdk/anthropic'
 import { buildSystemPrompt, getModel } from '@/lib/ai'
 import { streamText } from 'ai'
+export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 

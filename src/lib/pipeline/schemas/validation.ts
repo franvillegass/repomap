@@ -61,22 +61,25 @@ const NodeWithoutRoleSchema = z.object({
   }),
 })
 
-const EdgeSchema = z.object({
+export const EdgeSchema = z.object({
   id: z.string(),
   source: z.string(),
   target: z.string(),
-  edgeType: z.enum(['engineering', 'architecture', 'both']).optional(),
-  type: z.enum(['engineering', 'architecture', 'both']).optional(),
-  strength: z.union([
-    z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5)
-  ]),
-  label: z.string().optional(),
-  confidence: EdgeConfidenceSchema,
-}).transform((edge) => ({
-  ...edge,
-  edgeType: edge.edgeType ?? edge.type ?? 'engineering' as const,
-}))
 
+  edgeType: z.enum(['engineering', 'architecture', 'both']),
+
+  strength: z.union([
+    z.literal(1),
+    z.literal(2),
+    z.literal(3),
+    z.literal(4),
+    z.literal(5),
+  ]),
+
+  label: z.string().optional(),
+
+  confidence: z.enum(['high', 'medium', 'uncertain']),
+})
 export const Pass2OutputSchema = z.object({
   nodes: z.array(NodeWithoutRoleSchema),
   edges: z.array(EdgeSchema),

@@ -81,3 +81,4 @@ package-lock.json
 # Si usás pnpm:
 
 # pnpm-lock.yaml
+package.json
