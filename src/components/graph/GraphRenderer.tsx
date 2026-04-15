@@ -16,7 +16,7 @@ import {
 import '@xyflow/react/dist/style.css'
 
 import type { RepoGraph } from '@/lib/pipeline/schemas/graph'
-import { buildReactFlowGraph, buildReactFlowGraphFromResolved } from './graphLayout'
+import { buildReactFlowGraph} from './graphLayout'
 import { nodeTypes, edgeTypes } from './GraphNodes'
 import { ChatPanel } from './ChatPanel'
 import {

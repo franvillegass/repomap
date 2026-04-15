@@ -22,7 +22,7 @@ import {
   useRef,
   type ReactNode,
 } from 'react'
-import type { RepoGraph } from '../schemas/graph'
+import type { RepoGraph } from '@/lib/pipeline/schemas/graph'
 import type {
   Branch,
   BranchNode,

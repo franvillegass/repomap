@@ -9,7 +9,7 @@
 // The base graph is NEVER modified.
 // ============================================================
 
-import type { Node, Edge } from '../schemas/graph'
+import type { Node, Edge } from '@/lib/pipeline/schemas/graph'
 
 // ------------------------------------------------------------
 // Branch metadata (identity, not content)

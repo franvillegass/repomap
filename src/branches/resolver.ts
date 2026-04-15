@@ -11,7 +11,7 @@
 // (Deletion/hiding of base nodes is out of scope for Phase 1.)
 // ============================================================
 
-import type { RepoGraph } from '../schemas/graph'
+import type { RepoGraph } from '@/lib/pipeline/schemas/graph'
 import type { ResolvedGraph, ResolvedNode, ResolvedEdge, FictionalFile } from './types'
 import { getBranch, getDelta } from './storage'
 
