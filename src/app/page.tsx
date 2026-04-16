@@ -4,7 +4,8 @@ import { useState, useEffect, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import type { RepoGraph, GraphMeta } from '@/lib/pipeline/schemas/graph'
 import { saveGraph, loadGraph, listGraphs, deleteGraph } from '@/lib/storage/graphStore'
-import { BranchProvider } from '@/lib/branches/useBranches'
+import { BranchProvider } from '../../src/branches/UseBranches'
+
 
 const GraphRenderer = dynamic(
   () => import('@/components/graph/GraphRenderer'),
