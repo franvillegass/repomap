@@ -6,6 +6,10 @@ import type { RepoGraph, GraphMeta } from '@/lib/pipeline/schemas/graph'
 import { saveGraph, loadGraph, listGraphs, deleteGraph } from '@/lib/storage/graphStore'
 import { BranchProvider } from '../../src/branches/UseBranches'
 
+const ManualEditor = dynamic(
+  () => import('@/components/graph/ManualEditor'),
+  { ssr: false, loading: () => <FullscreenSpinner /> },
+)
 
 const GraphRenderer = dynamic(
   () => import('@/components/graph/GraphRenderer'),
@@ -48,6 +52,8 @@ export default function Page() {
     PASS_STEPS.map((s) => ({ ...s, state: 'pending' })),
   )
   const [history, setHistory] = useState<GraphMeta[]>([])
+
+  const [manualMode, setManualMode] = useState(false)
 
   const abortRef = useRef<AbortController | null>(null)
 
@@ -124,6 +130,26 @@ export default function Page() {
     setSteps(PASS_STEPS.map((s) => ({ ...s, state: 'pending' })))
   }
 
+  // ── Manual mode ──
+  if (manualMode) {
+    return (
+      <div style={{ width: '100vw', height: '100vh' }}>
+        <ManualEditor
+          mode="create"
+          onComplete={async (g) => {
+            await saveGraph(g)
+            const updated = await listGraphs()
+            setHistory(updated)
+            setGraph(g)
+            setManualMode(false)
+            setStatus('success')
+          }}
+          onCancel={() => setManualMode(false)}
+        />
+      </div>
+    )
+  }
+
   if (status === 'success' && graph) {
     return (
       <BranchProvider baseGraph={graph}>
@@ -162,6 +188,55 @@ export default function Page() {
           />
         ) : (
           <LoadingView steps={steps} onCancel={handleReset} />
+        )}
+
+        {/* Manual mode option */}
+        {(status === 'idle' || status === 'error') && (
+          <div style={{ marginTop: 20, animation: 'fadeUp 0.4s 0.15s ease both', opacity: 0 }}>
+            <div style={{
+              display:    'flex',
+              alignItems: 'center',
+              gap:        10,
+              margin:     '0 0 14px',
+            }}>
+              <div style={{ flex: 1, height: 1, background: '#0f1f35' }} />
+              <span style={{ fontSize: 9, color: '#1e3a5f', letterSpacing: '0.08em' }}>OR</span>
+              <div style={{ flex: 1, height: 1, background: '#0f1f35' }} />
+            </div>
+            <button
+              onClick={() => setManualMode(true)}
+              style={{
+                width:        '100%',
+                background:   'transparent',
+                border:       '1px solid #1a2744',
+                borderRadius: 8,
+                padding:      '13px 0',
+                color:        '#334155',
+                fontSize:     12,
+                fontFamily:   'inherit',
+                cursor:       'pointer',
+                display:      'flex',
+                alignItems:   'center',
+                justifyContent: 'center',
+                gap:          8,
+                transition:   'border-color 0.15s, color 0.15s',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.borderColor = '#2a3f6a'
+                e.currentTarget.style.color       = '#475569'
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = '#1a2744'
+                e.currentTarget.style.color       = '#334155'
+              }}
+            >
+              <span style={{ fontSize: 14 }}>⬡</span>
+              create diagram manually
+            </button>
+            <div style={{ fontSize: 10, color: '#1e3a5f', textAlign: 'center', marginTop: 6 }}>
+              no api key required · draw nodes and connections by hand
+            </div>
+          </div>
         )}
 
         {history.length > 0 && (status === 'idle' || status === 'error') && (
