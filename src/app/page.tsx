@@ -9,7 +9,7 @@ import {
   type ModelConfig,
   saveModelConfig,
   loadModelConfig,
-} from '@/lib/modelConfig'
+} from '../../src/lib/modelConfig'
 
 const ManualEditor = dynamic(
   () => import('@/components/graph/ManualEditor'),

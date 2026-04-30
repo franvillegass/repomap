@@ -24,9 +24,9 @@ import {
   ViewSwitcher, recommendedView,
   type ViewType,
 } from './AlternativeViews'
-import { BranchPanel } from '@/components/branches/BranchPanel'
-import { useBranches }  from '@/lib/branches/useBranches'
-import { loadModelConfig, modelLabel } from '@/lib/modelConfig'
+import { BranchPanel } from '../../branches/BranchPanel'
+import { useBranches }  from '../../branches/UseBranches'
+import { loadModelConfig, modelLabel } from '../../lib/modelConfig'
 
 // ------------------------------------------------------------
 // Types

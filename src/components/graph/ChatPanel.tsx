@@ -10,7 +10,7 @@ import {
   clearChatSession,
   type PersistedMessage,
 } from '@/lib/storage/chatStore'
-import { loadModelConfig, modelBadge } from '@/lib/modelConfig'
+import { loadModelConfig, modelBadge } from '../../lib/modelConfig'
 
 // ─────────────────────────────────────────────────────────────
 // Markdown renderer
