@@ -5,6 +5,11 @@ import dynamic from 'next/dynamic'
 import type { RepoGraph, GraphMeta } from '@/lib/pipeline/schemas/graph'
 import { saveGraph, loadGraph, listGraphs, deleteGraph } from '@/lib/storage/graphStore'
 import { BranchProvider } from '../../src/branches/UseBranches'
+import {
+  type ModelConfig,
+  saveModelConfig,
+  loadModelConfig,
+} from '@/lib/modelConfig'
 
 const ManualEditor = dynamic(
   () => import('@/components/graph/ManualEditor'),
@@ -55,6 +60,23 @@ export default function Page() {
 
   const [manualMode, setManualMode] = useState(false)
 
+  const [modelConfig,      setModelConfigState] = useState<ModelConfig>({ provider: 'anthropic' })
+  const [showModelPicker,  setShowModelPicker]  = useState(false)
+  const [groqKeyInput,     setGroqKeyInput]     = useState('')
+
+  // Load from sessionStorage after mount
+  useEffect(() => {
+    const saved = loadModelConfig()
+    setModelConfigState(saved)
+    if (saved.provider === 'groq') setGroqKeyInput(saved.groqApiKey ?? '')
+  }, [])
+
+  function applyModelConfig(config: ModelConfig) {
+    saveModelConfig(config)
+    setModelConfigState(config)
+    setShowModelPicker(false)
+  }
+
   const abortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
@@ -90,7 +112,7 @@ export default function Page() {
       const res = await fetch('/api/analyze', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ repoUrl: trimmed, githubToken: token || undefined }),
+        body:    JSON.stringify({ repoUrl: trimmed, githubToken: token || undefined, modelConfig }),
         signal:  ctrl.signal,
       })
 
@@ -178,14 +200,163 @@ export default function Page() {
         </div>
 
         {status === 'idle' || status === 'error' ? (
-          <InputForm
-            url={url} token={token} showToken={showToken}
-            onUrlChange={setUrl} onTokenChange={setToken}
-            onToggleToken={() => setShowToken((v) => !v)}
-            onSubmit={handleAnalyze}
-            error={status === 'error' ? errorMsg : ''}
-            onReset={() => setStatus('idle')}
-          />
+          <>
+            {/* Model selector */}
+            <div style={{ marginBottom: 18, animation: 'fadeUp 0.4s 0.05s ease both', opacity: 0 }}>
+              <div style={{ fontSize: 9, color: '#334155', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 8 }}>
+                Analysis model
+              </div>
+
+              {/* Compact selector row */}
+              {!showModelPicker ? (
+                <button
+                  onClick={() => setShowModelPicker(true)}
+                  style={{
+                    width:          '100%',
+                    display:        'flex',
+                    alignItems:     'center',
+                    justifyContent: 'space-between',
+                    background:     'rgba(255,255,255,0.02)',
+                    border:         '1px solid #1e293b',
+                    borderRadius:   7,
+                    padding:        '9px 12px',
+                    cursor:         'pointer',
+                    fontFamily:     'inherit',
+                    color:          '#475569',
+                    fontSize:       11,
+                  }}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                    <span style={{
+                      width: 7, height: 7, borderRadius: '50%', flexShrink: 0, display: 'inline-block',
+                      background: modelConfig.provider === 'groq' ? '#a78bfa' : '#3b82f6',
+                    }} />
+                    {modelConfig.provider === 'groq'
+                      ? `Llama 3.3 70B · Groq${modelConfig.groqApiKey ? ' ✓' : ' (no key)'}`
+                      : 'Claude · Anthropic (premium)'}
+                  </span>
+                  <span style={{ fontSize: 9, color: '#1e3a5f' }}>change ›</span>
+                </button>
+              ) : (
+                <div style={{ background: '#0a111f', border: '1px solid #1e293b', borderRadius: 8, padding: '14px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+
+                  {/* Premium option */}
+                  <button
+                    onClick={() => applyModelConfig({ provider: 'anthropic' })}
+                    style={{
+                      background:   modelConfig.provider === 'anthropic' ? 'rgba(59,130,246,0.1)' : 'transparent',
+                      border:       `1px solid ${modelConfig.provider === 'anthropic' ? '#1d4ed8' : '#1e293b'}`,
+                      borderRadius: 7,
+                      padding:      '11px 14px',
+                      cursor:       'pointer',
+                      fontFamily:   'inherit',
+                      textAlign:    'left',
+                      width:        '100%',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 3 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: modelConfig.provider === 'anthropic' ? '#93c5fd' : '#475569' }}>
+                        ✦ Premium
+                      </span>
+                      <span style={{ fontSize: 9, color: '#1d4ed8', background: 'rgba(29,78,216,0.15)', border: '1px solid rgba(29,78,216,0.3)', borderRadius: 4, padding: '1px 6px' }}>
+                        uses your subscription
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 10, color: '#334155' }}>Claude · Anthropic — best results</div>
+                  </button>
+
+                  {/* Free option */}
+                  <div style={{
+                    background:   modelConfig.provider === 'groq' ? 'rgba(167,139,250,0.08)' : 'transparent',
+                    border:       `1px solid ${modelConfig.provider === 'groq' ? '#6d28d9' : '#1e293b'}`,
+                    borderRadius: 7,
+                    padding:      '11px 14px',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: modelConfig.provider === 'groq' ? '#a78bfa' : '#475569' }}>
+                        ⬡ Free — Groq
+                      </span>
+                      <span style={{ fontSize: 9, color: '#6d28d9', background: 'rgba(109,40,217,0.15)', border: '1px solid rgba(109,40,217,0.3)', borderRadius: 4, padding: '1px 6px' }}>
+                        requires API key
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 10, color: '#334155', marginBottom: 8 }}>
+                      Llama 3.3 70B · limited tokens/min · progress saves between sessions
+                    </div>
+                    <input
+                      value={groqKeyInput}
+                      onChange={(e) => setGroqKeyInput(e.target.value)}
+                      placeholder="gsk_…  paste your Groq API key"
+                      style={{
+                        width:        '100%',
+                        background:   '#050a14',
+                        border:       '1px solid #1e293b',
+                        borderRadius: 5,
+                        padding:      '7px 10px',
+                        color:        '#e2e8f0',
+                        fontSize:     11,
+                        fontFamily:   'inherit',
+                        outline:      'none',
+                        boxSizing:    'border-box',
+                        marginBottom: 8,
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && groqKeyInput.trim().startsWith('gsk_')) {
+                          applyModelConfig({ provider: 'groq', groqApiKey: groqKeyInput.trim() })
+                        }
+                      }}
+                    />
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button
+                        onClick={() => {
+                          if (groqKeyInput.trim().startsWith('gsk_')) {
+                            applyModelConfig({ provider: 'groq', groqApiKey: groqKeyInput.trim() })
+                          }
+                        }}
+                        disabled={!groqKeyInput.trim().startsWith('gsk_')}
+                        style={{
+                          flex:         1,
+                          background:   groqKeyInput.trim().startsWith('gsk_') ? 'rgba(109,40,217,0.2)' : 'rgba(109,40,217,0.05)',
+                          border:       '1px solid #3b1f6e',
+                          borderRadius: 5,
+                          color:        groqKeyInput.trim().startsWith('gsk_') ? '#a78bfa' : '#3b1f6e',
+                          fontSize:     11,
+                          padding:      '6px 0',
+                          cursor:       groqKeyInput.trim().startsWith('gsk_') ? 'pointer' : 'not-allowed',
+                          fontFamily:   'inherit',
+                        }}
+                      >
+                        Use Groq
+                      </button>
+                      <button
+                        onClick={() => setShowModelPicker(false)}
+                        style={{
+                          background: 'transparent', border: '1px solid #1e293b',
+                          borderRadius: 5, color: '#334155', fontSize: 11,
+                          padding: '6px 10px', cursor: 'pointer', fontFamily: 'inherit',
+                        }}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                    <div style={{ fontSize: 9, color: '#1e3a5f', marginTop: 6 }}>
+                      Key stored in sessionStorage only · never sent to our servers
+                    </div>
+                  </div>
+
+                </div>
+              )}
+            </div>
+
+            <InputForm
+              url={url} token={token} showToken={showToken}
+              onUrlChange={setUrl} onTokenChange={setToken}
+              onToggleToken={() => setShowToken((v) => !v)}
+              onSubmit={handleAnalyze}
+              error={status === 'error' ? errorMsg : ''}
+              onReset={() => setStatus('idle')}
+            />
+          </>
         ) : (
           <LoadingView steps={steps} onCancel={handleReset} />
         )}

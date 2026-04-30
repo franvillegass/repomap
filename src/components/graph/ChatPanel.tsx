@@ -10,6 +10,7 @@ import {
   clearChatSession,
   type PersistedMessage,
 } from '@/lib/storage/chatStore'
+import { loadModelConfig, modelBadge } from '@/lib/modelConfig'
 
 // ─────────────────────────────────────────────────────────────
 // Markdown renderer
@@ -169,12 +170,16 @@ function ChatInner({ graph, initialMessages, onClose }: {
   const inputRef    = useRef<HTMLInputElement>(null)
   const [showSugg, setShowSugg] = useState(initialMessages.length === 0)
 
-  // FIX 1: body estable — nunca cambia de referencia después del mount
+  // Load model config once at mount (sessionStorage is client-only)
+  const modelConfig = useMemo(() => loadModelConfig(), [])
+  const aiLabel     = modelConfig.provider === 'groq' ? 'ask llama' : 'ask claude'
+
   const graphRef = useRef(graph)
   useEffect(() => { graphRef.current = graph }, [graph])
   const chatBody = useMemo(() => ({
-  graph,
-}), [graph])
+    graph,
+    modelConfig,
+  }), [graph, modelConfig])
 
   const { messages, input, handleInputChange, handleSubmit, isLoading, error, setInput, reload } = useChat({
     api:            '/api/chat',
@@ -214,7 +219,7 @@ function ChatInner({ graph, initialMessages, onClose }: {
 
   return (
     <div style={shellStyle}>
-      <ChatHeader graph={graph} onClose={onClose} onClear={handleClear} />
+      <ChatHeader graph={graph} onClose={onClose} onClear={handleClear} modelBadge={modelBadge(modelConfig)} />
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
 
@@ -245,7 +250,9 @@ function ChatInner({ graph, initialMessages, onClose }: {
 
   return (
     <div key={m.id} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-      <div style={aiBadge}>AI</div>
+      <div style={aiBadge} title={modelBadge(modelConfig)}>
+        {modelConfig.provider === 'groq' ? 'LM' : 'AI'}
+      </div>
       <div style={{ flex: 1, minWidth: 0, fontSize: 12, lineHeight: 1.6 }}>
         <div style={{ whiteSpace: 'pre-wrap' }}>
   {m.content}
@@ -257,7 +264,7 @@ function ChatInner({ graph, initialMessages, onClose }: {
 
         {isLoading && (
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <div style={aiBadge}>AI</div>
+            <div style={aiBadge}>{modelConfig.provider === 'groq' ? 'LM' : 'AI'}</div>
             <ThinkingDots />
           </div>
         )}
@@ -296,7 +303,9 @@ function ChatInner({ graph, initialMessages, onClose }: {
 // ChatHeader
 // ─────────────────────────────────────────────────────────────
 
-function ChatHeader({ graph, onClose, onClear }: { graph: RepoGraph; onClose?: () => void; onClear: () => void }) {
+function ChatHeader({ graph, onClose, onClear, modelBadge: badge }: {
+  graph: RepoGraph; onClose?: () => void; onClear: () => void; modelBadge: string
+}) {
   return (
     <div style={{ alignItems: 'center', borderBottom: '1px solid rgba(255,255,255,0.06)', display: 'flex', flexShrink: 0, justifyContent: 'space-between', padding: '10px 14px' }}>
       <div>
@@ -304,6 +313,7 @@ function ChatHeader({ graph, onClose, onClear }: { graph: RepoGraph; onClose?: (
         <div style={{ color: '#334155', fontSize: 10, marginTop: 1 }}>
           {graph.meta.repoName} · {graph.meta.detectedPattern.replace(/_/g, ' ')}
         </div>
+        <div style={{ color: '#1e3a5f', fontSize: 9, marginTop: 2 }}>{badge}</div>
       </div>
       <div style={{ display: 'flex', gap: 4 }}>
         <button onClick={onClear} title="Clear history" style={iconBtn}

@@ -6,7 +6,6 @@ import type {
 } from './schemas/graph'
 import {
   Pass1OutputSchema,
-  Pass2OutputSchema,
   Pass2NodesSchema,
   Pass2EdgesSchema,
   Pass3OutputSchema,
@@ -18,34 +17,34 @@ import { buildPass2NodesPrompt, buildPass2EdgesPrompt } from './prompts/pass2'
 import { buildPass3Prompt } from './prompts/pass3'
 import { formatSampledFiles } from './sampler/fileSampler'
 import { callModelWithSchema } from './aiClient'
-
-
+import type { ModelConfig } from '@/lib/modelConfig'
 
 // ------------------------------------------------------------
 // Pipeline inputs
 // ------------------------------------------------------------
 export interface PipelineInput {
-  repoUrl: string
-  repoName: string
-  fileTree: string[]
+  repoUrl:          string
+  repoName:         string
+  fileTree:         string[]
   fetchFileContent: (path: string) => Promise<string>
+  modelConfig?:     ModelConfig
 }
 
 // ------------------------------------------------------------
 // Main pipeline
 // ------------------------------------------------------------
 export async function runAnalysisPipeline(input: PipelineInput): Promise<RepoGraph> {
-  const { repoUrl, repoName, fileTree, fetchFileContent } = input
+  const { repoUrl, repoName, fileTree, fetchFileContent, modelConfig } = input
   const analysisVersion = hashFileTree(fileTree)
-  const analyzedAt = new Date().toISOString()
+  const analyzedAt      = new Date().toISOString()
 
   // --- Pass 1: Structure ---
-  console.log('[Pipeline] Pass 1: Structure analysis...')
+  console.log('[Pipeline] Pass 1: Structure analysis…')
   const pass1Prompt = buildPass1Prompt(repoName, formatFileTree(fileTree))
-  const pass1: Pass1Output = await callModelWithSchema(pass1Prompt, Pass1OutputSchema)
+  const pass1: Pass1Output = await callModelWithSchema(pass1Prompt, Pass1OutputSchema, { modelConfig })
 
-  // --- Fetch file contents for Pass 2 ---
-  console.log(`[Pipeline] Fetching ${pass1.relevantFiles.length} files...`)
+  // --- Fetch file contents ---
+  console.log(`[Pipeline] Fetching ${pass1.relevantFiles.length} files…`)
   const fileContents = await Promise.all(
     pass1.relevantFiles.map(async (path) => ({
       path,
@@ -55,15 +54,14 @@ export async function runAnalysisPipeline(input: PipelineInput): Promise<RepoGra
   const sampledContents = formatSampledFiles(fileContents, pass1.estimatedSize)
 
   // --- Pass 2a: Nodes ---
-  console.log('[Pipeline] Pass 2a: Node mapping...')
+  console.log('[Pipeline] Pass 2a: Node mapping…')
   const pass2NodesPrompt = buildPass2NodesPrompt(repoName, pass1.tentativeModules, sampledContents)
-  const pass2Nodes = await callModelWithSchema(pass2NodesPrompt, Pass2NodesSchema)
+  const pass2Nodes = await callModelWithSchema(pass2NodesPrompt, Pass2NodesSchema, { modelConfig })
 
   // --- Pass 2b: Edges ---
-  
-  console.log('[Pipeline] Pass 2b: Edge mapping...')
+  console.log('[Pipeline] Pass 2b: Edge mapping…')
   const pass2EdgesPrompt = buildPass2EdgesPrompt(repoName, pass2Nodes.nodes)
-  const pass2Edges = await callModelWithSchema(pass2EdgesPrompt, Pass2EdgesSchema)
+  const pass2Edges = await callModelWithSchema(pass2EdgesPrompt, Pass2EdgesSchema, { modelConfig })
 
   const pass2: Pass2Output = {
     nodes: pass2Nodes.nodes,
@@ -71,9 +69,9 @@ export async function runAnalysisPipeline(input: PipelineInput): Promise<RepoGra
   }
 
   // --- Pass 3: Semantics ---
-  console.log('[Pipeline] Pass 3: Semantic enrichment...')
+  console.log('[Pipeline] Pass 3: Semantic enrichment…')
   const pass3Prompt = buildPass3Prompt(repoName, pass2)
-  const pass3 = await callModelWithSchema(pass3Prompt, Pass3OutputSchema)
+  const pass3 = await callModelWithSchema(pass3Prompt, Pass3OutputSchema, { modelConfig })
 
   // --- Assemble final graph ---
   const nodes: Node[] = pass2.nodes.map((node) => ({
@@ -95,25 +93,21 @@ export async function runAnalysisPipeline(input: PipelineInput): Promise<RepoGra
   }
 
   const overlay: Overlay = {
-    version: 0,
+    version:       0,
     nodeOverrides: {},
     edgeOverrides: {},
-    manualNodes: [],
-    manualEdges: [],
+    manualNodes:   [],
+    manualEdges:   [],
   }
 
-  const graph: RepoGraph = {
-    meta,
-    nodes,
-    edges: pass2.edges,
-    overlay,
-  }
+  const graph: RepoGraph = { meta, nodes, edges: pass2.edges, overlay }
 
   console.log('[Pipeline] Analysis complete.', {
-    nodes: nodes.length,
-    edges: pass2.edges.length,
-    pattern: meta.detectedPattern,
+    nodes:      nodes.length,
+    edges:      pass2.edges.length,
+    pattern:    meta.detectedPattern,
     confidence: meta.patternConfidence,
+    provider:   modelConfig?.provider ?? 'env-default',
   })
 
   return graph

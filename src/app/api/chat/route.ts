@@ -1,35 +1,33 @@
-import { createAnthropic } from '@ai-sdk/anthropic'
-import { createGroq } from '@ai-sdk/groq'
-import { NextRequest } from 'next/server'
+// src/app/api/chat/route.ts
+import { NextRequest }    from 'next/server'
+import { streamText }     from 'ai'
 import type { RepoGraph } from '@/lib/pipeline/schemas/graph'
-import { anthropic } from '@ai-sdk/anthropic'
 import { buildSystemPrompt, getModel } from '@/lib/ai'
-import { streamText } from 'ai'
-export const runtime = 'nodejs'
-export const dynamic = 'force-dynamic'
-
-
-
+import type { ModelConfig } from '@/lib/modelConfig'
 
 export async function POST(req: NextRequest) {
   try {
-    const { messages, graph } = (await req.json()) as {
-      messages: { role: 'user' | 'assistant'; content: string }[]
-      graph:    RepoGraph
+    const { messages, graph, modelConfig } = (await req.json()) as {
+      messages:     { role: 'user' | 'assistant'; content: string }[]
+      graph:        RepoGraph
+      modelConfig?: ModelConfig
     }
 
     if (!graph) {
       return new Response('Missing graph context', { status: 400 })
     }
+
     const systemPrompt = buildSystemPrompt(graph)
-    console.log('[chat] system chars:', systemPrompt.length, '| messages:', messages.length)
+    console.log('[chat] system chars:', systemPrompt.length, '| provider:', modelConfig?.provider ?? 'env-default')
 
     const result = streamText({
-      model:       getModel(),
-      system:      systemPrompt, //buildSystemPrompt(graph),
+      model:       getModel(modelConfig),
+      system:      systemPrompt,
       messages,
       maxTokens:   1024,
-      temperature: 0.3   
+      temperature: 0.3,
+      maxRetries:  0,
+      onError:     (err) => console.error('[chat stream error]', err),
     })
 
     return result.toDataStreamResponse()
@@ -41,4 +39,8 @@ export async function POST(req: NextRequest) {
       headers: { 'Content-Type': 'application/json' },
     })
   }
+}
+
+export function GET() {
+  return new Response(JSON.stringify({ error: 'Use POST' }), { status: 400 })
 }

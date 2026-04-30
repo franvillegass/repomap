@@ -1,70 +1,46 @@
+// src/app/api/analyze/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { parseGithubUrl, fetchFileTree, fetchFileContent } from '@/lib/github/githubClient'
 import { runAnalysisPipeline } from '@/lib/pipeline/pipeline'
-import type { RepoGraph } from '@/lib/pipeline/schemas/graph'
-import { buildSystemPrompt, getModel } from '@/lib/ai'
-import { streamText } from 'ai'
-
-
-// ------------------------------------------------------------
-// POST /api/analyze
-//
-// Body (JSON):
-//   repoUrl     string  — required, e.g. "https://github.com/owner/repo"
-//   githubToken string  — optional, overrides GITHUB_TOKEN env var
-//                         (useful for private repos; NOT persisted server-side)
-//
-// Response:
-//   200  RepoGraph JSON
-//   400  { error: string }  — bad input
-//   500  { error: string }  — pipeline or GitHub API failure
-// ------------------------------------------------------------
+import type { ModelConfig } from '@/lib/modelConfig'
 
 export async function POST(req: NextRequest) {
   try {
-    const { messages, graph } = (await req.json()) as {
-      messages: { role: 'user' | 'assistant'; content: string }[]
-      graph:    RepoGraph
+    const { repoUrl, githubToken, modelConfig } = (await req.json()) as {
+      repoUrl:      string
+      githubToken?: string
+      modelConfig?: ModelConfig
     }
 
-    if (!graph) {
-      return new Response('Missing graph context', { status: 400 })
+    if (!repoUrl?.trim()) {
+      return NextResponse.json({ error: 'repoUrl is required' }, { status: 400 })
     }
 
-    const systemPrompt = buildSystemPrompt(graph)
-    console.log('[chat] system chars:', systemPrompt.length, '| messages:', messages.length)
+    const { owner, repo } = parseGithubUrl(repoUrl)
+    const repoName        = `${owner}/${repo}`
+    const token           = githubToken || process.env.GITHUB_TOKEN
 
-    const result = streamText({
-      model:       getModel(),
-      system:      systemPrompt,
-      messages,
-      maxTokens:   1024,
-      temperature: 0.3,
-      maxRetries:  0,          // ← clave: sin reintentos
-      onError:     (err) => console.error('[chat stream error]', err), // ← log del error real
+    const fileTree = await fetchFileTree(owner, repo, token)
+
+    const graph = await runAnalysisPipeline({
+      repoUrl,
+      repoName,
+      fileTree,
+      fetchFileContent: (path) => fetchFileContent(owner, repo, path, token),
+      modelConfig,
     })
 
-    return result.toDataStreamResponse()
+    return NextResponse.json(graph)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
-    console.error('[chat/route] error:', message)
-    return new Response(JSON.stringify({ error: message }), {
-      status:  500,
-      headers: { 'Content-Type': 'application/json' },
-    })
+    console.error('[analyze/route] error:', message)
+    return NextResponse.json({ error: message }, { status: 500 })
   }
 }
 
-
-// --- Only POST is supported ---
 export function GET() {
-  return json400('Use POST with a JSON body: { repoUrl: "https://github.com/owner/repo" }')
-}
-
-// ------------------------------------------------------------
-// Helpers
-// ------------------------------------------------------------
-
-function json400(message: string) {
-  return NextResponse.json({ error: message }, { status: 400 })
+  return NextResponse.json(
+    { error: 'Use POST: { repoUrl, githubToken?, modelConfig? }' },
+    { status: 400 },
+  )
 }

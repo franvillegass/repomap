@@ -1,74 +1,82 @@
 import { createAnthropic } from '@ai-sdk/anthropic'
-import { createGroq } from '@ai-sdk/groq'
-import { generateText } from 'ai'
-import type { ZodSchema } from 'zod'
+import { createGroq }      from '@ai-sdk/groq'
+import { generateText }    from 'ai'
+import type { ZodSchema }  from 'zod'
+import type { ModelConfig } from '@/lib/modelConfig'
 
-function getModel() {
-  const provider = process.env.AI_PROVIDER ?? 'groq'
-  const modelId  = process.env.AI_MODEL    ?? 'openai/gpt-oss-120b'
+// ─────────────────────────────────────────────────────────────
+// Model factory
+// ─────────────────────────────────────────────────────────────
 
-  if (provider === 'anthropic') {
-    const anthropic = createAnthropic()
-    return anthropic(modelId)
+export function getModelFromConfig(config?: ModelConfig) {
+  if (config?.provider === 'groq' && config.groqApiKey) {
+    return createGroq({ apiKey: config.groqApiKey })('llama-3.3-70b-versatile')
   }
-
-  const groq = createGroq()
-  return groq(modelId)
+  if (config?.provider === 'anthropic') {
+    return createAnthropic()('claude-sonnet-4-5')
+  }
+  // Fallback: env vars
+  const provider = process.env.AI_PROVIDER ?? 'anthropic'
+  const modelId  = process.env.AI_MODEL    ?? 'claude-sonnet-4-5'
+  return provider === 'groq' ? createGroq()(modelId) : createAnthropic()(modelId)
 }
+
+const RATE_LIMIT_WAIT_MS = 62000
+const RETRY_WAIT_MS      = 65000
 
 function sleep(ms: number) {
-  return new Promise(resolve => setTimeout(resolve, ms))
+  return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+function isRateLimitError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error)
+  return msg.includes('429') || msg.toLowerCase().includes('rate limit') || msg.toLowerCase().includes('too many requests')
+}
+
+// ─────────────────────────────────────────────────────────────
+// Core call with retry + rate-limit handling
+// ─────────────────────────────────────────────────────────────
+
 export async function callModelWithSchema<T>(
-  prompt: string,
-  schema: ZodSchema<T>,
+  prompt:  string,
+  schema:  ZodSchema<T>,
   options?: {
-    maxRetries?: number
-    temperature?: number
+    maxRetries?:   number
+    temperature?:  number
+    modelConfig?:  ModelConfig
   }
 ): Promise<T> {
-  const { maxRetries = 2, temperature = 0 } = options ?? {}
-
+  const { maxRetries = 2, temperature = 0, modelConfig } = options ?? {}
+  const model = getModelFromConfig(modelConfig)
   let lastError: Error | null = null
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    // Wait 65 seconds before retrying to reset the TPM window
     if (attempt > 0) {
-      console.log(`[aiClient] Waiting 65s before retry ${attempt}/${maxRetries}...`)
-      await sleep(65000)
+      console.log(`[aiClient] Waiting ${RETRY_WAIT_MS / 1000}s before retry ${attempt}/${maxRetries}…`)
+      await sleep(RETRY_WAIT_MS)
     }
 
     try {
       const result = await generateText({
-        model: getModel(),
-        prompt: prompt + '\n\nRespond with ONLY valid JSON. No markdown, no code blocks, no explanation.',
+        model,
+        prompt:    prompt + '\n\nRespond with ONLY valid JSON. No markdown, no code blocks, no explanation.',
         temperature,
-        maxTokens: 16000,
+        maxTokens: 4096,
       })
 
-      const raw = result.text.trim()
-
-      // Strip markdown code blocks if present
-      const cleaned = raw
-        .replace(/^```json\s*/i, '')
-        .replace(/^```\s*/i, '')
-        .replace(/\s*```$/i, '')
-        .trim()
+      const cleaned = result.text.trim()
+        .replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim()
 
       let parsed: unknown
-      try {
-        parsed = JSON.parse(cleaned)
-      } catch {
+      try { parsed = JSON.parse(cleaned) } catch {
         console.error(`[aiClient] JSON parse failed on attempt ${attempt + 1}:`, cleaned.slice(0, 300))
-        lastError = new Error(`Invalid JSON from model: ${cleaned.slice(0, 200)}`)
+        lastError = new Error(`Invalid JSON: ${cleaned.slice(0, 200)}`)
         continue
       }
 
       const validated = schema.safeParse(parsed)
       if (!validated.success) {
-        console.error(`[aiClient] Schema validation failed on attempt ${attempt + 1}:`, JSON.stringify(validated.error.issues, null, 2))
-        console.error('[aiClient] Full parsed value:', JSON.stringify(parsed, null, 2))
+        console.error(`[aiClient] Schema validation failed:`, JSON.stringify(validated.error.issues, null, 2))
         lastError = new Error(`Schema validation failed: ${JSON.stringify(validated.error.issues)}`)
         continue
       }
@@ -79,8 +87,12 @@ export async function callModelWithSchema<T>(
       const message = error instanceof Error ? error.message : String(error)
       console.error(`[aiClient] API call failed on attempt ${attempt + 1}:`, message)
       lastError = new Error(message)
+      if (isRateLimitError(error) && attempt < maxRetries) {
+        console.log(`[aiClient] Rate limit — waiting ${RATE_LIMIT_WAIT_MS / 1000}s…`)
+        await sleep(RATE_LIMIT_WAIT_MS)
+      }
     }
   }
 
-  throw new Error(`AI model call failed after ${maxRetries + 1} attempts: ${lastError?.message}`)
+  throw new Error(`AI call failed after ${maxRetries + 1} attempts: ${lastError?.message}`)
 }

@@ -1,14 +1,18 @@
-import { streamText } from 'ai'
 import { createAnthropic } from '@ai-sdk/anthropic'
-import { createGroq } from '@ai-sdk/groq'
-import { NextRequest } from 'next/server'
-import type { RepoGraph } from '@/lib/pipeline/schemas/graph'
+import { createGroq }      from '@ai-sdk/groq'
+import type { RepoGraph }  from '@/lib/pipeline/schemas/graph'
+import type { ModelConfig } from '@/lib/modelConfig'
 
-export function getModel() {
-  const provider = process.env.AI_PROVIDER ?? 'groq'
-  const modelId  = process.env.AI_MODEL    ?? 'gpt-4o'
-  if (provider === 'anthropic') return createAnthropic()(modelId)
-  return createGroq()(modelId)
+export function getModel(config?: ModelConfig) {
+  if (config?.provider === 'groq' && config.groqApiKey) {
+    return createGroq({ apiKey: config.groqApiKey })('llama-3.3-70b-versatile')
+  }
+  if (config?.provider === 'anthropic') {
+    return createAnthropic()('claude-sonnet-4-5')
+  }
+  const provider = process.env.AI_PROVIDER ?? 'anthropic'
+  const modelId  = process.env.AI_MODEL    ?? 'claude-sonnet-4-5'
+  return provider === 'groq' ? createGroq()(modelId) : createAnthropic()(modelId)
 }
 
 export function buildSystemPrompt(graph: RepoGraph): string {
@@ -16,16 +20,17 @@ export function buildSystemPrompt(graph: RepoGraph): string {
     const role     = n.detectedRole && n.detectedRole !== 'unknown' ? n.detectedRole : null
     const patterns = n.patterns.length > 0 ? n.patterns.join(', ') : null
     const files    = n.files.length > 0
-      ? `files: ${n.files.slice(0, 5).join(', ')}${n.files.length > 5 ? ` +${n.files.length - 5}` : ''}`
+      ? `files: ${n.files.slice(0, 3).join(', ')}${n.files.length > 3 ? ` +${n.files.length - 3}` : ''}`
       : null
     const parts = [role, patterns ? `patterns: ${patterns}` : null, files].filter(Boolean)
     return `  • [${n.type}] ${n.label}${parts.length ? ` — ${parts.join(' | ')}` : ''}`
   }).join('\n')
 
-  const edgeLines = graph.edges.slice(0, 80).map((e) =>
-    `  ${e.source} → ${e.target} [${e.edgeType}, strength ${e.strength}/5, ${e.confidence}]${e.label ? ` (${e.label})` : ''}`
+  const edgeCap   = 60
+  const edgeLines = graph.edges.slice(0, edgeCap).map((e) =>
+    `  ${e.source} → ${e.target} [${e.edgeType}, s${e.strength}, ${e.confidence}]${e.label ? ` (${e.label})` : ''}`
   ).join('\n')
-  const edgeSuffix = graph.edges.length > 80 ? `\n  ...and ${graph.edges.length - 80} more` : ''
+  const edgeSuffix = graph.edges.length > edgeCap ? `\n  …and ${graph.edges.length - edgeCap} more` : ''
 
   const overlayNotes = Object.entries(graph.overlay.nodeOverrides)
     .filter(([, ov]) => ov.annotation || ov.statusTag)
@@ -36,12 +41,9 @@ export function buildSystemPrompt(graph: RepoGraph): string {
       return `  ${id} — ${parts.join(', ')}`
     }).join('\n')
 
-  return `You are an expert software architect with full knowledge of the "${graph.meta.repoName}" codebase.
+  return `You are an expert software architect with full knowledge of "${graph.meta.repoName}".
 
-REPOSITORY
-  URL:     ${graph.meta.repoUrl}
-  Pattern: ${graph.meta.detectedPattern} (confidence ${Math.round(graph.meta.patternConfidence * 100)}%)
-  Analyzed: ${graph.meta.analyzedAt}
+REPO: ${graph.meta.repoUrl} · pattern: ${graph.meta.detectedPattern} (${Math.round(graph.meta.patternConfidence * 100)}%)
 
 NODES
 ${nodeLines}
@@ -50,10 +52,5 @@ DEPENDENCIES (${graph.edges.length} total)
 ${edgeLines}${edgeSuffix}
 ${overlayNotes ? `\nUSER ANNOTATIONS\n${overlayNotes}` : ''}
 
-INSTRUCTIONS
-- Answer questions about this specific repository's architecture
-- Reference node names exactly as they appear above
-- Be concise and technical. Use markdown: **bold** for emphasis, \`code\` for names, ### for section headers if needed
-- When relevant, suggest specific files or modules
-- If something is not visible in the graph, say so clearly`
+Answer questions about this repository. Reference node names exactly. Be concise and technical. Use markdown. If something isn't visible in the graph, say so.`
 }

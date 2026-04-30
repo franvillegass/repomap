@@ -16,7 +16,7 @@ import {
 import '@xyflow/react/dist/style.css'
 
 import type { RepoGraph } from '@/lib/pipeline/schemas/graph'
-import { buildReactFlowGraph} from './graphLayout'
+import { buildReactFlowGraph, buildReactFlowGraphFromResolved } from './graphLayout'
 import { nodeTypes, edgeTypes } from './GraphNodes'
 import { ChatPanel } from './ChatPanel'
 import {
@@ -24,8 +24,9 @@ import {
   ViewSwitcher, recommendedView,
   type ViewType,
 } from './AlternativeViews'
-import { BranchPanel } from '../../branches/BranchPanel'
-import { useBranches } from '../../branches/UseBranches'
+import { BranchPanel } from '@/components/branches/BranchPanel'
+import { useBranches }  from '@/lib/branches/useBranches'
+import { loadModelConfig, modelLabel } from '@/lib/modelConfig'
 
 // ------------------------------------------------------------
 // Types
@@ -77,6 +78,9 @@ export default function GraphRenderer({ graph, onOverlayChange }: GraphRendererP
   const [viewType,    setViewType]    = useState<ViewType>(
     () => recommendedView(graph.meta.layoutTemplate)
   )
+
+  // Read model config once — drives the chat button label
+  const aiLabel = useMemo(() => modelLabel(loadModelConfig()), [])
 
   // ── Chat panel resize ──
   function startResize(e: React.MouseEvent) {
@@ -419,7 +423,7 @@ export default function GraphRenderer({ graph, onOverlayChange }: GraphRendererP
             cursor: 'pointer', fontFamily: 'inherit',
           }}
         >
-          {chatOpen ? '✕ close chat' : '✦ ask claude'}
+          {chatOpen ? '✕ close chat' : `✦ ${aiLabel}`}
         </button>
       </div>
 
