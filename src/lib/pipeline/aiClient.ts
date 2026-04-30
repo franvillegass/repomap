@@ -51,10 +51,13 @@ export async function callModelWithSchema<T>(
   let lastError: Error | null = null
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    if (attempt > 0) {
+    if (attempt > 0 && lastError && isRateLimitError(lastError)) {
       console.log(`[aiClient] Waiting ${RETRY_WAIT_MS / 1000}s before retry ${attempt}/${maxRetries}…`)
       await sleep(RETRY_WAIT_MS)
+    } else if (attempt > 0) {
+      console.log(`[aiClient] Retry ${attempt}/${maxRetries}…`)
     }
+    
 
     try {
       const result = await generateText({
@@ -83,16 +86,20 @@ export async function callModelWithSchema<T>(
 
       return validated.data
 
+   // aiClient.ts — dentro del loop for, reemplazar el bloque catch
+
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       console.error(`[aiClient] API call failed on attempt ${attempt + 1}:`, message)
       lastError = new Error(message)
+
       if (isRateLimitError(error) && attempt < maxRetries) {
         console.log(`[aiClient] Rate limit — waiting ${RATE_LIMIT_WAIT_MS / 1000}s…`)
         await sleep(RATE_LIMIT_WAIT_MS)
       }
+      // Schema/parse failures: no sleep, retry immediately
+    
     }
   }
-
   throw new Error(`AI call failed after ${maxRetries + 1} attempts: ${lastError?.message}`)
-}
+    }

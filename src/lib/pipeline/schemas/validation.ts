@@ -47,39 +47,73 @@ export type Pass1Output = z.infer<typeof Pass1OutputSchema>
 
 // --- Pass 2 ---
 
-const NodeWithoutRoleSchema = z.object({
-  id: z.string(),
-  label: z.string(),
-  type: NodeTypeSchema,
-  parentId: z.string().nullable(),
-  depth: z.number().int().min(0).max(3),
-  files: z.array(z.string()),
-  metadata: z.object({
-    language: z.string().optional(),
-    lineCount: z.number().optional(),
-    complexity: z.enum(['low', 'medium', 'high']).optional(),
-  }),
-})
+// validation.ts — reemplazar NodeWithoutRoleSchema
 
-export const EdgeSchema = z.object({
-  id: z.string(),
-  source: z.string(),
-  target: z.string(),
+const complexityCoerce = (val: unknown): 'low' | 'medium' | 'high' | undefined => {
+  if (val === 'low' || val === 'medium' || val === 'high') return val
+  if (val === 1 || val === '1') return 'low'
+  if (val === 2 || val === '2') return 'medium'
+  if (val === 3 || val === '3') return 'high'
+  return undefined
+}
 
-  edgeType: z.enum(['engineering', 'architecture', 'both']),
+const NodeWithoutRoleSchema = z.preprocess(
+  (raw: unknown) => {
+    if (!raw || typeof raw !== 'object') return raw
+    const data = raw as Record<string, unknown>
 
-  strength: z.union([
-    z.literal(1),
-    z.literal(2),
-    z.literal(3),
-    z.literal(4),
-    z.literal(5),
-  ]),
+    // Llama usa "name" en vez de "label"
+    if (data.label === undefined && data.name !== undefined) {
+      data.label = data.name
+    }
 
-  label: z.string().optional(),
+    // Coercionar complexity numérica a string enum
+    const meta = data.metadata as Record<string, unknown> | undefined
+    if (meta && meta.complexity !== undefined) {
+      meta.complexity = complexityCoerce(meta.complexity)
+    }
 
-  confidence: z.enum(['high', 'medium', 'uncertain']),
-})
+    return data
+  },
+  z.object({
+    id:       z.string(),
+    label:    z.string(),
+    type:     NodeTypeSchema,
+    parentId: z.string().nullable(),
+    depth:    z.number().int().min(0).max(3),
+    files:    z.array(z.string()),
+    metadata: z.object({
+      language:   z.string().optional(),
+      lineCount:  z.number().optional(),
+      complexity: z.enum(['low', 'medium', 'high']).optional(),
+    }),
+  })
+)
+
+export const EdgeSchema = z.preprocess(
+  (raw: unknown) => {
+    if (!raw || typeof raw !== 'object') return raw
+    const data = raw as Record<string, unknown>
+
+    // Llama usa "type" en vez de "edgeType"
+    if (data.edgeType === undefined && data.type !== undefined) {
+      data.edgeType = data.type
+    }
+
+    return data
+  },
+  z.object({
+    id:       z.string(),
+    source:   z.string(),
+    target:   z.string(),
+    edgeType: z.enum(['engineering', 'architecture', 'both']),
+    strength: z.union([
+      z.literal(1), z.literal(2), z.literal(3), z.literal(4), z.literal(5),
+    ]),
+    label:      z.string().optional(),
+    confidence: z.enum(['high', 'medium', 'uncertain']),
+  })
+)
 export const Pass2OutputSchema = z.object({
   nodes: z.array(NodeWithoutRoleSchema),
   edges: z.array(EdgeSchema),

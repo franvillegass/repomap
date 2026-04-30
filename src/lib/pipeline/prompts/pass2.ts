@@ -1,5 +1,7 @@
 import type { Pass1Output } from '@/lib/pipeline/schemas/graph'
 
+// pass2.ts — reemplazar buildPass2NodesPrompt completo
+
 export function buildPass2NodesPrompt(
   repoName: string,
   tentativeModules: Pass1Output['tentativeModules'],
@@ -19,15 +21,39 @@ ${sampledFileContents}
 
 Your task: Create nodes for the architecture graph.
 
-Rules:
-- If you detect clear architectural layers (e.g. presentation, domain, infrastructure), create layer nodes: type "layer", parentId = null, depth = 0
-- Create a node for each module: type "module", parentId = layer node id if applicable or null, depth = 1
-- Create a node for each individual file within a module: type "file", parentId = their module id, depth = 2
-- Node ID format: layer__<name>, module__<name>, file__<path>
-- For file nodes: set "files" to [the file path]. For module/layer nodes: set "files" to all file paths they contain.
-- metadata: include language if detectable, lineCount if estimable, complexity if assessable. Use empty object {} if unknown.
+FIELD NAMES — use exactly these, no substitutions:
+- "label" (NOT "name", NOT "title") — a short human-readable display name
+- "id" — unique identifier
+- "type" — one of: "layer", "module", "file", "component"
+- "parentId" — string id or null
+- "depth" — integer 0, 1, 2, or 3
+- "files" — array of file path strings
+- "metadata" — object with optional fields:
+    - "language": string (e.g. "TypeScript")
+    - "lineCount": number
+    - "complexity": MUST be the string "low", "medium", or "high" — never a number
 
-Return ONLY a JSON object with a "nodes" array. Do not include edges.`
+STRUCTURE RULES:
+- Detected architectural layers → type "layer", parentId: null, depth: 0
+- Each module → type "module", parentId: layer id or null, depth: 1
+- Each file → type "file", parentId: its module id, depth: 2
+- Node ID format: layer__<name>, module__<name>, file__<path>
+- file nodes: "files" = [that file path]
+- module/layer nodes: "files" = all contained file paths
+- If metadata is unknown, use {}
+
+Return ONLY a valid JSON object with a "nodes" array. No markdown, no code blocks, no explanation.
+
+Example of a valid node:
+{
+  "id": "module__auth",
+  "label": "Auth Module",
+  "type": "module",
+  "parentId": "layer__domain",
+  "depth": 1,
+  "files": ["src/auth/index.ts", "src/auth/guard.ts"],
+  "metadata": { "language": "TypeScript", "complexity": "medium" }
+}`
 }
 
 export function buildPass2EdgesPrompt(
@@ -54,12 +80,16 @@ Edge classification:
 - "architecture": structural design dependency — inheritance, interface implementation, composition
 - "both": clearly both simultaneously
 
-For each edge:
-- id: format edge__<source>__<target>
-- source and target must be valid node IDs from the list above
-- strength (1–5): how central is this dependency
-- confidence: "high", "medium", or "uncertain"
-- label: short verb phrase e.g. "calls", "implements", "depends on"
+// Reemplazar la línea "For each edge:"
+
+For each edge, use EXACTLY these field names (no substitutions):
+- "id": format edge__<source>__<target>
+- "source": valid node id
+- "target": valid node id
+- "edgeType" (NOT "type") — one of: "engineering", "architecture", "both"
+- "strength": integer 1–5
+- "confidence": "high", "medium", or "uncertain"
+- "label": short verb phrase e.g. "calls", "implements", "depends on"
 
 Return ONLY a JSON object with an "edges" array. No markdown, no explanation.`
 }
