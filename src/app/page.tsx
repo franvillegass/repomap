@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import type { RepoGraph, GraphMeta } from '@/lib/pipeline/schemas/graph'
-import { saveGraph, loadGraph, listGraphs, deleteGraph } from '@/lib/storage/graphStore'
+import { saveGraph, loadGraph, listGraphs, deleteGraph, listProgress, type PipelineProgress } from '@/lib/storage/graphStore'
 import { BranchProvider } from '../../src/branches/UseBranches'
 import {
   type ModelConfig,
@@ -57,6 +57,7 @@ export default function Page() {
     PASS_STEPS.map((s) => ({ ...s, state: 'pending' })),
   )
   const [history, setHistory] = useState<GraphMeta[]>([])
+  const [progressList, setProgressList] = useState<PipelineProgress[]>([])
 
   const [manualMode, setManualMode] = useState(false)
 
@@ -81,6 +82,7 @@ export default function Page() {
 
   useEffect(() => {
     listGraphs().then(setHistory).catch(() => {})
+    listProgress().then(setProgressList).catch(() => {})
   }, [])
 
   useEffect(() => () => { abortRef.current?.abort() }, [])
@@ -94,6 +96,53 @@ export default function Page() {
     e.stopPropagation()
     await deleteGraph(repoUrl)
     setHistory((prev) => prev.filter((m) => m.repoUrl !== repoUrl))
+  }
+
+  async function handleResume(repoUrl: string) {
+    setUrl(repoUrl)
+    setStatus('loading')
+    setErrorMsg('')
+    setSteps(PASS_STEPS.map((s) => ({ ...s, state: 'pending' })))
+
+    const timer = simulateProgress(setSteps)
+    const ctrl  = new AbortController()
+    abortRef.current = ctrl
+
+    try {
+      const res = await fetch('/api/analyze', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ repoUrl, githubToken: token || undefined, modelConfig, resume: true }),
+        signal:  ctrl.signal,
+      })
+
+      clearTimers(timer)
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({ error: res.statusText }))
+        throw new Error(body.error ?? `HTTP ${res.status}`)
+      }
+
+      setSteps(PASS_STEPS.map((s) => ({ ...s, state: 'done' })))
+      await sleep(400)
+
+      const data: RepoGraph = await res.json()
+
+      await saveGraph(data)
+      const updated = await listGraphs()
+      setHistory(updated)
+      const updatedProgress = await listProgress()
+      setProgressList(updatedProgress)
+
+      setGraph(data)
+      setStatus('success')
+
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') return
+      clearTimers(timer)
+      setErrorMsg((err as Error).message)
+      setStatus('error')
+    }
   }
 
   async function handleAnalyze() {
@@ -131,12 +180,22 @@ export default function Page() {
       await saveGraph(data)
       const updated = await listGraphs()
       setHistory(updated)
+      const updatedProgress = await listProgress()
+      setProgressList(updatedProgress)
 
       setGraph(data)
       setStatus('success')
 
     } catch (err) {
       if ((err as Error).name === 'AbortError') return
+      const errorData = (err as any)?.response?.data || {}
+      if (errorData.rateLimit) {
+        setErrorMsg('Rate limit exceeded. Progress saved. You can resume tomorrow when limits reset.')
+        setStatus('error')
+        // Refresh progress list
+        listProgress().then(setProgressList).catch(() => {})
+        return
+      }
       clearTimers(timer)
       setErrorMsg((err as Error).message)
       setStatus('error')
@@ -410,6 +469,10 @@ export default function Page() {
           </div>
         )}
 
+        {progressList.length > 0 && (status === 'idle' || status === 'error') && (
+          <ProgressList items={progressList} onResume={handleResume} />
+        )}
+
         {history.length > 0 && (status === 'idle' || status === 'error') && (
           <HistoryList items={history} onLoad={handleLoadSaved} onDelete={handleDelete} />
         )}
@@ -551,6 +614,40 @@ function HistoryList({ items, onLoad, onDelete }: HistoryListProps) {
             >
               ×
             </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ------------------------------------------------------------
+// ProgressList
+// ------------------------------------------------------------
+
+interface ProgressListProps {
+  items:    PipelineProgress[]
+  onResume: (url: string) => void
+}
+
+function ProgressList({ items, onResume }: ProgressListProps) {
+  return (
+    <div style={{ marginTop: 24, animation: 'fadeUp 0.4s 0.15s ease both', opacity: 0 }}>
+      <div style={{ fontSize: 9, color: '#334155', letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 8 }}>
+        in progress (rate limited)
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {items.map((progress) => (
+          <div key={progress.repoUrl} onClick={() => onResume(progress.repoUrl)} style={historyRowStyle}>
+            <div style={{ flex: 1, overflow: 'hidden' }}>
+              <div style={{ fontSize: 12, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {progress.repoName}
+              </div>
+              <div style={{ fontSize: 10, color: '#334155', marginTop: 1 }}>
+                Step {progress.lastStep}/3 · {formatDate(progress.updatedAt)}
+              </div>
+            </div>
+            <div style={{ fontSize: 10, color: '#3b82f6', marginLeft: 8 }}>resume ›</div>
           </div>
         ))}
       </div>

@@ -86,7 +86,7 @@ export async function callModelWithSchema<T>(
 
       return validated.data
 
-   // aiClient.ts — dentro del loop for, reemplazar el bloque catch
+  
 
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
@@ -95,7 +95,11 @@ export async function callModelWithSchema<T>(
 
       if (isRateLimitError(error) && attempt < maxRetries) {
         console.log(`[aiClient] Rate limit — waiting ${RATE_LIMIT_WAIT_MS / 1000}s…`)
+        console.log()
         await sleep(RATE_LIMIT_WAIT_MS)
+      } else if (isRateLimitError(error) && attempt === maxRetries) {
+        // If last attempt was rate limit, throw specific error
+        throw new RateLimitExceededError(`Rate limit exceeded after ${maxRetries + 1} attempts. Progress saved.`)
       }
       // Schema/parse failures: no sleep, retry immediately
     
@@ -103,3 +107,9 @@ export async function callModelWithSchema<T>(
   }
   throw new Error(`AI call failed after ${maxRetries + 1} attempts: ${lastError?.message}`)
     }
+export class RateLimitExceededError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'RateLimitExceededError'
+  }
+}

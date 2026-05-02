@@ -18,6 +18,7 @@ import { buildPass3Prompt } from './prompts/pass3'
 import { formatSampledFiles } from './sampler/fileSampler'
 import { callModelWithSchema } from './aiClient'
 import type { ModelConfig } from '@/lib/modelConfig'
+import { saveProgress, loadProgress, type PipelineProgress } from '@/lib/storage/graphStore'
 
 // ------------------------------------------------------------
 // Pipeline inputs
@@ -28,40 +29,85 @@ export interface PipelineInput {
   fileTree:         string[]
   fetchFileContent: (path: string) => Promise<string>
   modelConfig?:     ModelConfig
+  resumeFrom?:      PipelineProgress
 }
 
 // ------------------------------------------------------------
 // Main pipeline
 // ------------------------------------------------------------
 export async function runAnalysisPipeline(input: PipelineInput): Promise<RepoGraph> {
-  const { repoUrl, repoName, fileTree, fetchFileContent, modelConfig } = input
+  const { repoUrl, repoName, fileTree, fetchFileContent, modelConfig, resumeFrom } = input
   const analysisVersion = hashFileTree(fileTree)
   const analyzedAt      = new Date().toISOString()
 
+  let progress: PipelineProgress = resumeFrom || {
+    repoUrl,
+    repoName,
+    fileTree,
+    lastStep: 0,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  }
+
   // --- Pass 1: Structure ---
-  console.log('[Pipeline] Pass 1: Structure analysis…')
-  const pass1Prompt = buildPass1Prompt(repoName, formatFileTree(fileTree))
-  const pass1: Pass1Output = await callModelWithSchema(pass1Prompt, Pass1OutputSchema, { modelConfig })
+  let pass1: Pass1Output
+  if (progress.lastStep >= 1 && progress.pass1) {
+    console.log('[Pipeline] Resuming from Pass 1…')
+    pass1 = progress.pass1
+  } else {
+    console.log('[Pipeline] Pass 1: Structure analysis…')
+    const pass1Prompt = buildPass1Prompt(repoName, formatFileTree(fileTree))
+    pass1 = await callModelWithSchema(pass1Prompt, Pass1OutputSchema, { modelConfig })
+    progress.pass1 = pass1
+    progress.lastStep = 1
+    await saveProgress(progress)
+  }
 
   // --- Fetch file contents ---
-  console.log(`[Pipeline] Fetching ${pass1.relevantFiles.length} files…`)
-  const fileContents = await Promise.all(
-    pass1.relevantFiles.map(async (path) => ({
-      path,
-      content: await fetchFileContent(path),
-    }))
-  )
+  let fileContents: { path: string; content: string }[]
+  if (progress.lastStep >= 1 && progress.fileContents) {
+    console.log('[Pipeline] Resuming file contents…')
+    fileContents = progress.fileContents
+  } else {
+    console.log(`[Pipeline] Fetching ${pass1.relevantFiles.length} files…`)
+    fileContents = await Promise.all(
+      pass1.relevantFiles.map(async (path) => ({
+        path,
+        content: await fetchFileContent(path),
+      }))
+    )
+    progress.fileContents = fileContents
+    await saveProgress(progress)
+  }
   const sampledContents = formatSampledFiles(fileContents, pass1.estimatedSize)
 
   // --- Pass 2a: Nodes ---
-  console.log('[Pipeline] Pass 2a: Node mapping…')
-  const pass2NodesPrompt = buildPass2NodesPrompt(repoName, pass1.tentativeModules, sampledContents)
-  const pass2Nodes = await callModelWithSchema(pass2NodesPrompt, Pass2NodesSchema, { modelConfig })
+  let pass2Nodes
+  if (progress.lastStep >= 2 && progress.pass2Nodes) {
+    console.log('[Pipeline] Resuming from Pass 2a…')
+    pass2Nodes = progress.pass2Nodes
+  } else {
+    console.log('[Pipeline] Pass 2a: Node mapping…')
+    const pass2NodesPrompt = buildPass2NodesPrompt(repoName, pass1.tentativeModules, sampledContents)
+    pass2Nodes = await callModelWithSchema(pass2NodesPrompt, Pass2NodesSchema, { modelConfig })
+    progress.pass2Nodes = pass2Nodes
+    progress.lastStep = 2
+    await saveProgress(progress)
+  }
 
   // --- Pass 2b: Edges ---
-  console.log('[Pipeline] Pass 2b: Edge mapping…')
-  const pass2EdgesPrompt = buildPass2EdgesPrompt(repoName, pass2Nodes.nodes)
-  const pass2Edges = await callModelWithSchema(pass2EdgesPrompt, Pass2EdgesSchema, { modelConfig })
+  let pass2Edges
+  if (progress.lastStep >= 2 && progress.pass2Edges) {
+    console.log('[Pipeline] Resuming from Pass 2b…')
+    pass2Edges = progress.pass2Edges
+  } else {
+    console.log('[Pipeline] Pass 2b: Edge mapping…')
+    const pass2EdgesPrompt = buildPass2EdgesPrompt(repoName, pass2Nodes.nodes)
+    pass2Edges = await callModelWithSchema(pass2EdgesPrompt, Pass2EdgesSchema, { modelConfig })
+    progress.pass2Edges = pass2Edges
+    progress.lastStep = 2
+    await saveProgress(progress)
+  }
 
   const pass2: Pass2Output = {
     nodes: pass2Nodes.nodes,
@@ -69,9 +115,18 @@ export async function runAnalysisPipeline(input: PipelineInput): Promise<RepoGra
   }
 
   // --- Pass 3: Semantics ---
-  console.log('[Pipeline] Pass 3: Semantic enrichment…')
-  const pass3Prompt = buildPass3Prompt(repoName, pass2)
-  const pass3 = await callModelWithSchema(pass3Prompt, Pass3OutputSchema, { modelConfig })
+  let pass3
+  if (progress.lastStep >= 3 && progress.pass3) {
+    console.log('[Pipeline] Resuming from Pass 3…')
+    pass3 = progress.pass3
+  } else {
+    console.log('[Pipeline] Pass 3: Semantic enrichment…')
+    const pass3Prompt = buildPass3Prompt(repoName, pass2)
+    pass3 = await callModelWithSchema(pass3Prompt, Pass3OutputSchema, { modelConfig })
+    progress.pass3 = pass3
+    progress.lastStep = 3
+    await saveProgress(progress)
+  }
 
   // --- Assemble final graph ---
   const nodes: Node[] = pass2.nodes.map((node) => ({
@@ -109,6 +164,11 @@ export async function runAnalysisPipeline(input: PipelineInput): Promise<RepoGra
     confidence: meta.patternConfidence,
     provider:   modelConfig?.provider ?? 'env-default',
   })
+
+  // Clean up progress since analysis is complete
+  if (resumeFrom) {
+    await import('@/lib/storage/graphStore').then(({ deleteProgress }) => deleteProgress(repoUrl))
+  }
 
   return graph
 }

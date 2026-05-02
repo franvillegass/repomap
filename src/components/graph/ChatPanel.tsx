@@ -135,10 +135,12 @@ export function ChatPanel({ graph, onClose }: ChatPanelProps) {
     loadChatSession(graph.meta.repoName).then((s) => setInitialMessages(s?.messages ?? []))
   }, [graph.meta.repoName])
 
+  const modelConfig = useMemo(() => loadModelConfig(), [])
+
   if (initialMessages === null) {
     return (
       <div style={shellStyle}>
-        <ChatHeader graph={graph} onClose={onClose} onClear={() => {}} />
+        <ChatHeader graph={graph} onClose={onClose} onClear={() => {}} modelBadge={modelBadge(modelConfig)} />
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <ThinkingDots />
         </div>
