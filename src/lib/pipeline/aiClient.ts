@@ -8,13 +8,26 @@ import type { ModelConfig } from '@/lib/modelConfig'
 // Model factory
 // ─────────────────────────────────────────────────────────────
 
-export function getModelFromConfig(config?: ModelConfig) {
+export function getModelFromConfig(config?: ModelConfig, pass?: string) {
   if (config?.provider === 'groq' && config.groqApiKey) {
+
+    
+    if (pass === '1' || pass === '2') {
+      return createGroq({ apiKey: config.groqApiKey })('llama-3.1-8b-instant')
+    }
+
+    if (pass === '3') {
+      return createGroq({ apiKey: config.groqApiKey })('llama-3.3-70b-versatile')
+    }
+
+    // fallback actual
     return createGroq({ apiKey: config.groqApiKey })('llama-3.3-70b-versatile')
   }
+
   if (config?.provider === 'anthropic') {
     return createAnthropic()('claude-sonnet-4-5')
   }
+
   // Fallback: env vars
   const provider = process.env.AI_PROVIDER ?? 'anthropic'
   const modelId  = process.env.AI_MODEL    ?? 'claude-sonnet-4-5'
@@ -41,10 +54,14 @@ export async function callModelWithSchema<T>(
     maxRetries?:   number
     temperature?:  number
     modelConfig?:  ModelConfig
+    pass?: string
   }
 ): Promise<T> {
-  const { maxRetries = 2, temperature = 0, modelConfig } = options ?? {}
-  const model = getModelFromConfig(modelConfig)
+  const { maxRetries = 2, temperature = 0, modelConfig, pass } = options ?? {}
+
+
+  const model = getModelFromConfig(modelConfig, pass)
+
   let lastError: Error | null = null
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -84,16 +101,16 @@ export async function callModelWithSchema<T>(
       console.error(`[aiClient] API call failed on attempt ${attempt + 1}:`, message)
       lastError = new Error(message)
 
-      // Rate limit: fail immediately, don't retry
       if (isRateLimitError(error)) {
         console.log(`[aiClient] Rate limit detected — saving progress and stopping`)
         throw new RateLimitExceededError(`Rate limit exceeded. Please try again later. ${message}`)
       }
-      // Schema/parse failures: retry without sleeping
     }
   }
+
   throw new Error(`AI call failed after ${maxRetries + 1} attempts: ${lastError?.message}`)
 }
+
 export class RateLimitExceededError extends Error {
   constructor(message: string, public progress?: any) {
     super(message)

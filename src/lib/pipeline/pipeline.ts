@@ -19,6 +19,7 @@ import { formatSampledFiles } from './sampler/fileSampler'
 import { callModelWithSchema } from './aiClient'
 import type { ModelConfig } from '@/lib/modelConfig'
 import type { PipelineProgress } from '@/lib/storage/graphStore'
+import { RateLimitExceededError } from '@/lib/pipeline/aiClient'
 
 // ------------------------------------------------------------
 // Pipeline inputs
@@ -64,7 +65,11 @@ export async function runAnalysisPipeline(input: PipelineInput): Promise<RepoGra
     console.log('[Pipeline] Pass 1: Structure analysis…')
     const pass1Prompt = buildPass1Prompt(repoName, formatFileTree(fileTree))
     try {
-      pass1 = await callModelWithSchema(pass1Prompt, Pass1OutputSchema, { modelConfig })
+      pass1 = await callModelWithSchema(
+  pass1Prompt,
+  Pass1OutputSchema,
+  { modelConfig, pass: '1' }
+)
     } catch (error) {
       if (error instanceof RateLimitExceededError) {
         throw new RateLimitExceededError(error.message, { ...progress, lastStep: 0 })
@@ -99,7 +104,11 @@ export async function runAnalysisPipeline(input: PipelineInput): Promise<RepoGra
     console.log('[Pipeline] Pass 2a: Node mapping…')
     const pass2NodesPrompt = buildPass2NodesPrompt(repoName, pass1.tentativeModules, sampledContents)
     try {
-      pass2Nodes = await callModelWithSchema(pass2NodesPrompt, Pass2NodesSchema, { modelConfig })
+      pass2Nodes = await callModelWithSchema(
+  pass2NodesPrompt,
+  Pass2NodesSchema,
+  { modelConfig, pass: '2' }
+)
     } catch (error) {
       if (error instanceof RateLimitExceededError) {
         throw new RateLimitExceededError(error.message, { ...progress, lastStep: 1 })
@@ -121,7 +130,11 @@ export async function runAnalysisPipeline(input: PipelineInput): Promise<RepoGra
     console.log('[Pipeline] Pass 2b: Edge mapping…')
     const pass2EdgesPrompt = buildPass2EdgesPrompt(repoName, pass2Nodes.nodes)
     try {
-      pass2Edges = await callModelWithSchema(pass2EdgesPrompt, Pass2EdgesSchema, { modelConfig })
+      pass2Edges = await callModelWithSchema(
+  pass2EdgesPrompt,
+  Pass2EdgesSchema,
+  { modelConfig, pass: '2' }
+)
     } catch (error) {
       if (error instanceof RateLimitExceededError) {
         throw new RateLimitExceededError(error.message, { ...progress, lastStep: 2 })
@@ -148,7 +161,11 @@ export async function runAnalysisPipeline(input: PipelineInput): Promise<RepoGra
     console.log('[Pipeline] Pass 3: Semantic enrichment…')
     const pass3Prompt = buildPass3Prompt(repoName, pass2)
     try {
-      pass3 = await callModelWithSchema(pass3Prompt, Pass3OutputSchema, { modelConfig })
+      pass3 = await callModelWithSchema(
+  pass3Prompt,
+  Pass3OutputSchema,
+  { modelConfig, pass: '3' }
+)
     } catch (error) {
       if (error instanceof RateLimitExceededError) {
         throw new RateLimitExceededError(error.message, { ...progress, lastStep: 2 })
