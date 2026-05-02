@@ -52,7 +52,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ 
         error: error.message,
         rateLimit: true,
-        canResume: true 
+        canResume: true,
+        progress: (error as RateLimitExceededError).progress
       }, { status: 429 })
     }
     const message = error instanceof Error ? error.message : String(error)

@@ -39,22 +39,23 @@ const CONFIDENCE_STYLE: Record<string, string> = {
 // NODE
 // ------------------------------------------------------------
 
-export const RepoNode = memo(function RepoNode(props: NodeProps<RFNodeData>) {
+export const RepoNode = memo(function RepoNode(props: NodeProps<any>) {
   const { data, selected } = props
+  const nodeData = data as RFNodeData
   const [expanded,          setExpanded]          = useState(false)
   const [fictionalExpanded, setFictionalExpanded] = useState(false)
 
-  const colors         = TYPE_COLORS[data.nodeType] ?? TYPE_COLORS.module
-  const statusTag      = data.statusTag as string | undefined
+  const colors         = TYPE_COLORS[nodeData.nodeType] ?? TYPE_COLORS.module
+  const statusTag      = nodeData.statusTag as string | undefined
   const status         = statusTag ? STATUS_TAG_COLORS[statusTag] : null
-  const isBranch       = data.isBranchNode === true
-  const fictionalFiles = data.fictionalFiles ?? []
+  const isBranch       = nodeData.isBranchNode === true
+  const fictionalFiles = (nodeData.fictionalFiles ?? []) as any[]
   const hasFictional   = fictionalFiles.length > 0
 
   const canExpand =
-    (data.nodeType === 'module' || data.nodeType === 'layer') &&
-    Array.isArray(data.files) &&
-    data.files.length > 0
+    (nodeData.nodeType === 'module' || nodeData.nodeType === 'layer') &&
+    Array.isArray(nodeData.files) &&
+    nodeData.files.length > 0
 
   // Left border: status stripe > branch dashed > normal
   const borderLeft = status
@@ -111,9 +112,9 @@ export const RepoNode = memo(function RepoNode(props: NodeProps<RFNodeData>) {
       )}
 
       {/* Branch node description */}
-      {isBranch && data.description && (
+      {isBranch && nodeData.description && (
         <div
-          title={data.description}
+          title={nodeData.description}
           style={{
             fontSize:     9,
             color:        '#60a5fa',
@@ -300,7 +301,7 @@ export const RepoNode = memo(function RepoNode(props: NodeProps<RFNodeData>) {
 // EDGE
 // ------------------------------------------------------------
 
-export const RepoEdge = memo(function RepoEdge(props: EdgeProps<RFEdgeData>) {
+export const RepoEdge = memo(function RepoEdge(props: EdgeProps<any>) {
   const { id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, markerEnd } = props
 
   const [edgePath] = getSmoothStepPath({

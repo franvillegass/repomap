@@ -192,8 +192,13 @@ export default function Page() {
       if (errorData.rateLimit) {
         setErrorMsg('Rate limit exceeded. Progress saved. You can resume tomorrow when limits reset.')
         setStatus('error')
-        // Refresh progress list
-        listProgress().then(setProgressList).catch(() => {})
+        // Save progress if provided
+        if (errorData.progress) {
+          const { saveProgress } = await import('@/lib/storage/graphStore')
+          await saveProgress(errorData.progress)
+          const updatedProgress = await listProgress()
+          setProgressList(updatedProgress)
+        }
         return
       }
       clearTimers(timer)

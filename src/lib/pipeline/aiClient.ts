@@ -21,9 +21,6 @@ export function getModelFromConfig(config?: ModelConfig) {
   return provider === 'groq' ? createGroq()(modelId) : createAnthropic()(modelId)
 }
 
-const RATE_LIMIT_WAIT_MS = 62000
-const RETRY_WAIT_MS      = 65000
-
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
@@ -51,13 +48,9 @@ export async function callModelWithSchema<T>(
   let lastError: Error | null = null
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    if (attempt > 0 && lastError && isRateLimitError(lastError)) {
-      console.log(`[aiClient] Waiting ${RETRY_WAIT_MS / 1000}s before retry ${attempt}/${maxRetries}…`)
-      await sleep(RETRY_WAIT_MS)
-    } else if (attempt > 0) {
+    if (attempt > 0) {
       console.log(`[aiClient] Retry ${attempt}/${maxRetries}…`)
     }
-    
 
     try {
       const result = await generateText({
@@ -86,29 +79,23 @@ export async function callModelWithSchema<T>(
 
       return validated.data
 
-  
-
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       console.error(`[aiClient] API call failed on attempt ${attempt + 1}:`, message)
       lastError = new Error(message)
 
-      if (isRateLimitError(error) && attempt < maxRetries) {
-        console.log(`[aiClient] Rate limit — waiting ${RATE_LIMIT_WAIT_MS / 1000}s…`)
-        console.log()
-        await sleep(RATE_LIMIT_WAIT_MS)
-      } else if (isRateLimitError(error) && attempt === maxRetries) {
-        // If last attempt was rate limit, throw specific error
-        throw new RateLimitExceededError(`Rate limit exceeded after ${maxRetries + 1} attempts. Progress saved.`)
+      // Rate limit: fail immediately, don't retry
+      if (isRateLimitError(error)) {
+        console.log(`[aiClient] Rate limit detected — saving progress and stopping`)
+        throw new RateLimitExceededError(`Rate limit exceeded. Please try again later. ${message}`)
       }
-      // Schema/parse failures: no sleep, retry immediately
-    
+      // Schema/parse failures: retry without sleeping
     }
   }
   throw new Error(`AI call failed after ${maxRetries + 1} attempts: ${lastError?.message}`)
-    }
+}
 export class RateLimitExceededError extends Error {
-  constructor(message: string) {
+  constructor(message: string, public progress?: any) {
     super(message)
     this.name = 'RateLimitExceededError'
   }

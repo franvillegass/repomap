@@ -292,8 +292,8 @@ export default function ManualEditor({
     [baseGraph],
   )
 
-  const [nodes, setNodes, onNodesChange] = useNodesState<RFNodeData>(initRFNodes)
-  const [edges, setEdges, onEdgesChange] = useEdgesState<RFEdgeData>(initRFEdges)
+  const [nodes, setNodes, onNodesChange] = useNodesState<any>(initRFNodes)
+  const [edges, setEdges, onEdgesChange] = useEdgesState<any>(initRFEdges)
 
   // Graph-level meta
   const [diagramName, setDiagramName] = useState(baseGraph.meta.repoName)

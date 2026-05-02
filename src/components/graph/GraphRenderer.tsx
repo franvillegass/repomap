@@ -263,7 +263,7 @@ export default function GraphRenderer({ graph, onOverlayChange }: GraphRendererP
               </div>
             </Section>
             <Section title="View">
-              <ViewSwitcher current={viewType} onChange={setViewType} />
+              <ViewSwitcher current={viewType} recommended={recommendedView(graph.meta.layoutTemplate)} onChange={setViewType} />
             </Section>
           </div>
         )}
@@ -382,8 +382,8 @@ export default function GraphRenderer({ graph, onOverlayChange }: GraphRendererP
               onEdgesChange={onEdgesChange}
               onConnect={onConnect}
               onNodeClick={onNodeClick}
-              nodeTypes={nodeTypes}
-              edgeTypes={edgeTypes}
+              nodeTypes={nodeTypes as any}
+              edgeTypes={edgeTypes as any}
               fitView
               style={{ background: '#0b0f1a', paddingTop: isOnBranch ? 36 : 0 }}
             >

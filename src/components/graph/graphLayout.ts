@@ -13,7 +13,7 @@ import type { ResolvedGraph } from '@/branches/types'
 // React Flow Data Types
 // ------------------------------------------------------------
 
-export interface RFNodeData {
+export interface RFNodeData extends Record<string, unknown> {
   label: string
   nodeType: 'layer' | 'module' | 'file' | 'component'
   detectedRole: string
@@ -30,7 +30,7 @@ export interface RFNodeData {
   fictionalFiles?: import('@/branches/types').FictionalFile[]
 }
 
-export interface RFEdgeData {
+export interface RFEdgeData extends Record<string, unknown> {
   edgeType: 'engineering' | 'architecture' | 'both'
   confidence: 'high' | 'medium' | 'uncertain'
   strength: number

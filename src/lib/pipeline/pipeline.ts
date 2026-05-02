@@ -18,7 +18,7 @@ import { buildPass3Prompt } from './prompts/pass3'
 import { formatSampledFiles } from './sampler/fileSampler'
 import { callModelWithSchema } from './aiClient'
 import type { ModelConfig } from '@/lib/modelConfig'
-import { saveProgress, loadProgress, type PipelineProgress } from '@/lib/storage/graphStore'
+import type { PipelineProgress } from '@/lib/storage/graphStore'
 
 // ------------------------------------------------------------
 // Pipeline inputs
@@ -49,24 +49,35 @@ export async function runAnalysisPipeline(input: PipelineInput): Promise<RepoGra
     updatedAt: new Date().toISOString(),
   }
 
-  // --- Pass 1: Structure ---
   let pass1: Pass1Output
+  let fileContents: { path: string; content: string }[]
+  let pass2Nodes: any
+  let pass2Edges: any
+  let pass3: any
+
+  // --- Pass 1: Structure ---
+
   if (progress.lastStep >= 1 && progress.pass1) {
     console.log('[Pipeline] Resuming from Pass 1…')
     pass1 = progress.pass1
   } else {
     console.log('[Pipeline] Pass 1: Structure analysis…')
     const pass1Prompt = buildPass1Prompt(repoName, formatFileTree(fileTree))
-    pass1 = await callModelWithSchema(pass1Prompt, Pass1OutputSchema, { modelConfig })
+    try {
+      pass1 = await callModelWithSchema(pass1Prompt, Pass1OutputSchema, { modelConfig })
+    } catch (error) {
+      if (error instanceof RateLimitExceededError) {
+        throw new RateLimitExceededError(error.message, { ...progress, lastStep: 0 })
+      }
+      throw error
+    }
     progress.pass1 = pass1
     progress.lastStep = 1
-    await saveProgress(progress)
   }
 
   // --- Fetch file contents ---
-  let fileContents: { path: string; content: string }[]
-  if (progress.lastStep >= 1 && progress.fileContents) {
-    console.log('[Pipeline] Resuming file contents…')
+  if (progress.fileContents) {
+    console.log('[Pipeline] Using cached file contents…')
     fileContents = progress.fileContents
   } else {
     console.log(`[Pipeline] Fetching ${pass1.relevantFiles.length} files…`)
@@ -77,36 +88,48 @@ export async function runAnalysisPipeline(input: PipelineInput): Promise<RepoGra
       }))
     )
     progress.fileContents = fileContents
-    await saveProgress(progress)
   }
   const sampledContents = formatSampledFiles(fileContents, pass1.estimatedSize)
 
   // --- Pass 2a: Nodes ---
-  let pass2Nodes
-  if (progress.lastStep >= 2 && progress.pass2Nodes) {
+  if (progress.pass2Nodes) {
     console.log('[Pipeline] Resuming from Pass 2a…')
     pass2Nodes = progress.pass2Nodes
   } else {
     console.log('[Pipeline] Pass 2a: Node mapping…')
     const pass2NodesPrompt = buildPass2NodesPrompt(repoName, pass1.tentativeModules, sampledContents)
-    pass2Nodes = await callModelWithSchema(pass2NodesPrompt, Pass2NodesSchema, { modelConfig })
+    try {
+      pass2Nodes = await callModelWithSchema(pass2NodesPrompt, Pass2NodesSchema, { modelConfig })
+    } catch (error) {
+      if (error instanceof RateLimitExceededError) {
+        throw new RateLimitExceededError(error.message, { ...progress, lastStep: 1 })
+      }
+      throw error
+    }
     progress.pass2Nodes = pass2Nodes
     progress.lastStep = 2
-    await saveProgress(progress)
   }
 
   // --- Pass 2b: Edges ---
-  let pass2Edges
-  if (progress.lastStep >= 2 && progress.pass2Edges) {
+  if (progress.pass2Edges) {
     console.log('[Pipeline] Resuming from Pass 2b…')
     pass2Edges = progress.pass2Edges
   } else {
+    if (!pass2Nodes) {
+      throw new Error('pass2Nodes is required for Pass 2b but not available')
+    }
     console.log('[Pipeline] Pass 2b: Edge mapping…')
     const pass2EdgesPrompt = buildPass2EdgesPrompt(repoName, pass2Nodes.nodes)
-    pass2Edges = await callModelWithSchema(pass2EdgesPrompt, Pass2EdgesSchema, { modelConfig })
+    try {
+      pass2Edges = await callModelWithSchema(pass2EdgesPrompt, Pass2EdgesSchema, { modelConfig })
+    } catch (error) {
+      if (error instanceof RateLimitExceededError) {
+        throw new RateLimitExceededError(error.message, { ...progress, lastStep: 2 })
+      }
+      throw error
+    }
     progress.pass2Edges = pass2Edges
     progress.lastStep = 2
-    await saveProgress(progress)
   }
 
   const pass2: Pass2Output = {
@@ -115,24 +138,37 @@ export async function runAnalysisPipeline(input: PipelineInput): Promise<RepoGra
   }
 
   // --- Pass 3: Semantics ---
-  let pass3
-  if (progress.lastStep >= 3 && progress.pass3) {
+  if (progress.pass3) {
     console.log('[Pipeline] Resuming from Pass 3…')
     pass3 = progress.pass3
   } else {
+    if (!pass2Nodes || !pass2Edges) {
+      throw new Error('pass2 is required for Pass 3 but not available')
+    }
     console.log('[Pipeline] Pass 3: Semantic enrichment…')
     const pass3Prompt = buildPass3Prompt(repoName, pass2)
-    pass3 = await callModelWithSchema(pass3Prompt, Pass3OutputSchema, { modelConfig })
+    try {
+      pass3 = await callModelWithSchema(pass3Prompt, Pass3OutputSchema, { modelConfig })
+    } catch (error) {
+      if (error instanceof RateLimitExceededError) {
+        throw new RateLimitExceededError(error.message, { ...progress, lastStep: 2 })
+      }
+      throw error
+    }
     progress.pass3 = pass3
     progress.lastStep = 3
-    await saveProgress(progress)
+  }
+
+  // --- Final validation ---
+  if (!pass2Nodes || !pass2Edges || !pass3) {
+    throw new Error(`Incomplete pipeline state: pass2Nodes=${!!pass2Nodes}, pass2Edges=${!!pass2Edges}, pass3=${!!pass3}`)
   }
 
   // --- Assemble final graph ---
   const nodes: Node[] = pass2.nodes.map((node) => ({
     ...node,
-    detectedRole: pass3.nodeEnrichments[node.id]?.detectedRole ?? 'unknown',
-    patterns:     pass3.nodeEnrichments[node.id]?.patterns     ?? [],
+    detectedRole: pass3?.nodeEnrichments?.[node.id]?.detectedRole ?? 'unknown',
+    patterns:     pass3?.nodeEnrichments?.[node.id]?.patterns     ?? [],
   }))
 
   const meta: GraphMeta = {
@@ -164,11 +200,6 @@ export async function runAnalysisPipeline(input: PipelineInput): Promise<RepoGra
     confidence: meta.patternConfidence,
     provider:   modelConfig?.provider ?? 'env-default',
   })
-
-  // Clean up progress since analysis is complete
-  if (resumeFrom) {
-    await import('@/lib/storage/graphStore').then(({ deleteProgress }) => deleteProgress(repoUrl))
-  }
 
   return graph
 }
