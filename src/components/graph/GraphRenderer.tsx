@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useCallback, useState } from 'react'
+import { useMemo, useCallback, useState, useEffect } from 'react'
 import {
   ReactFlow,
   Background,
@@ -19,6 +19,7 @@ import type { RepoGraph } from '@/lib/pipeline/schemas/graph'
 import { buildReactFlowGraph, buildReactFlowGraphFromResolved } from './graphLayout'
 import { nodeTypes, edgeTypes } from './GraphNodes'
 import { ChatPanel } from './ChatPanel'
+import ManualEditor from './ManualEditor'
 import {
   OnionView, LayerStackView, ClusterView, PipelineView,
   ViewSwitcher, recommendedView,
@@ -26,6 +27,7 @@ import {
 } from './AlternativeViews'
 import { BranchPanel } from '../../branches/BranchPanel'
 import { useBranches }  from '../../branches/UseBranches'
+import type { ResolvedGraph } from '../../branches/types'
 import { loadModelConfig, modelLabel } from '../../lib/modelConfig'
 
 // ------------------------------------------------------------
@@ -67,7 +69,13 @@ const DEFAULT_FILTERS: Filters = {
 // ------------------------------------------------------------
 
 export default function GraphRenderer({ graph, onOverlayChange }: GraphRendererProps) {
-  const { isOnBranch, resolvedGraph, activeBranchId, branches } = useBranches()
+  const {
+    isOnBranch,
+    resolvedGraph,
+    activeBranchId,
+    branches,
+    replaceActiveBranchGraph,
+  } = useBranches()
 
   const [filters,     setFilters]     = useState<Filters>(DEFAULT_FILTERS)
   const [annotations, setAnnotations] = useState<Record<string, NodeAnnotation>>({})
@@ -75,6 +83,7 @@ export default function GraphRenderer({ graph, onOverlayChange }: GraphRendererP
   const [sidebarTab,  setSidebarTab]  = useState<SidebarTab>('filters')
   const [chatOpen,    setChatOpen]    = useState(false)
   const [chatWidth,   setChatWidth]   = useState(340)
+  const [branchEditOpen, setBranchEditOpen] = useState(false)
   const [viewType,    setViewType]    = useState<ViewType>(
     () => recommendedView(graph.meta.layoutTemplate)
   )
@@ -114,8 +123,13 @@ export default function GraphRenderer({ graph, onOverlayChange }: GraphRendererP
   const flowKey      = activeBranchId ?? '__base__'
   const activeBranch = branches.find((b) => b.id === activeBranchId) ?? null
 
-  const [nodes, , onNodesChange] = useNodesState(initialNodes)
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialNodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges)
+
+  useEffect(() => {
+    setNodes(initialNodes)
+    setEdges(initialEdges)
+  }, [flowKey, initialNodes, initialEdges, setNodes, setEdges])
 
   const visibleEdges = useMemo(() => edges.filter((e) => {
     const d    = e.data as { edgeType?: string; confidence?: string; strength?: number } | undefined
@@ -188,6 +202,11 @@ export default function GraphRenderer({ graph, onOverlayChange }: GraphRendererP
     img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgData)))
   }
 
+  async function handleBranchEditorComplete(editedGraph: RepoGraph) {
+    await replaceActiveBranchGraph(editedGraph)
+    setBranchEditOpen(false)
+  }
+
   const edgeCounts = useMemo(() => {
     const c = { engineering: 0, architecture: 0, both: 0, uncertain: 0 }
     edges.forEach((e) => {
@@ -201,6 +220,15 @@ export default function GraphRenderer({ graph, onOverlayChange }: GraphRendererP
     })
     return c
   }, [edges])
+
+  const nodeCounts = useMemo(() => {
+    const c = { layer: 0, module: 0, file: 0, component: 0 }
+    nodes.forEach((n) => {
+      const type = (n.data as { nodeType?: keyof typeof c }).nodeType
+      if (type && type in c) c[type]++
+    })
+    return c
+  }, [nodes])
 
   // ── Render ──
   return (
@@ -364,8 +392,14 @@ export default function GraphRenderer({ graph, onOverlayChange }: GraphRendererP
               <span style={{ color: '#374151', borderLeft: '1px solid #1e293b', paddingLeft: 10 }}>{activeBranch.description}</span>
             )}
             <button
+              onClick={() => setBranchEditOpen(true)}
+              style={{ marginLeft: 'auto', background: 'rgba(96,165,250,0.08)', border: '1px solid rgba(96,165,250,0.25)', borderRadius: 4, color: '#93c5fd', fontSize: 10, padding: '2px 8px', cursor: 'pointer', fontFamily: 'inherit' }}
+            >
+              edit branch
+            </button>
+            <button
               onClick={() => setSidebarTab('branches')}
-              style={{ marginLeft: 'auto', background: 'none', border: '1px solid #1e293b', borderRadius: 4, color: '#475569', fontSize: 10, padding: '2px 8px', cursor: 'pointer', fontFamily: 'inherit' }}
+              style={{ background: 'none', border: '1px solid #1e293b', borderRadius: 4, color: '#475569', fontSize: 10, padding: '2px 8px', cursor: 'pointer', fontFamily: 'inherit' }}
             >
               manage
             </button>
@@ -398,7 +432,7 @@ export default function GraphRenderer({ graph, onOverlayChange }: GraphRendererP
                 maskColor="rgba(0,0,0,0.6)"
               />
             </ReactFlow>
-            <Legend />
+            <Legend nodeCounts={nodeCounts} edgeCounts={edgeCounts} />
           </>
         )}
 
@@ -426,6 +460,20 @@ export default function GraphRenderer({ graph, onOverlayChange }: GraphRendererP
           {chatOpen ? '✕ close chat' : `✦ ${aiLabel}`}
         </button>
       </div>
+
+      {branchEditOpen && isOnBranch && resolvedGraph && activeBranch && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 100 }}>
+          <ManualEditor
+            mode="edit"
+            initialGraph={resolvedToRepoGraph(graph, resolvedGraph, activeBranch.name)}
+            lockedNodeIds={resolvedGraph.nodes.filter((node) => node.origin !== activeBranchId).map((node) => node.id)}
+            lockedEdgeIds={resolvedGraph.edges.filter((edge) => edge.origin !== activeBranchId).map((edge) => edge.id)}
+            contextLabel="branch edit"
+            onComplete={handleBranchEditorComplete}
+            onCancel={() => setBranchEditOpen(false)}
+          />
+        </div>
+      )}
 
       {/* ── Chat panel ── */}
       {chatOpen && (
@@ -486,29 +534,95 @@ function ExportBtn({ label, sub, onClick }: { label: string; sub: string; onClic
   )
 }
 
-function Legend() {
+function Legend({
+  nodeCounts,
+  edgeCounts,
+}: {
+  nodeCounts: Record<'layer' | 'module' | 'file' | 'component', number>
+  edgeCounts: Record<'engineering' | 'architecture' | 'both' | 'uncertain', number>
+}) {
+  const nodeItems = [
+    { key: 'layer', label: 'Layer', color: '#60a5fa' },
+    { key: 'module', label: 'Module', color: '#a78bfa' },
+    { key: 'file', label: 'File', color: '#34d399' },
+    { key: 'component', label: 'Component', color: '#fb923c' },
+  ].filter((item) => nodeCounts[item.key as keyof typeof nodeCounts] > 0)
+
+  const edgeItems = [
+    { key: 'engineering', label: 'Runtime calls', color: '#60a5fa', dash: undefined },
+    { key: 'architecture', label: 'Design structure', color: '#c084fc', dash: undefined },
+    { key: 'both', label: 'Mixed', color: '#f472b6', dash: undefined },
+    { key: 'uncertain', label: 'Uncertain', color: '#64748b', dash: '4,3' },
+  ].filter((item) => edgeCounts[item.key as keyof typeof edgeCounts] > 0)
+
   return (
     <div style={{ position: 'absolute', bottom: 16, left: 16, background: 'rgba(15,23,42,0.9)', border: '1px solid #1e293b', borderRadius: 8, padding: '10px 14px', backdropFilter: 'blur(8px)', zIndex: 10, display: 'flex', gap: 20 }}>
-      <div>
-        <div style={{ fontSize: 9, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>Nodes</div>
-        {[['Layer', '#60a5fa'], ['Module', '#a78bfa'], ['File', '#34d399'], ['Component', '#fb923c']].map(([label, color]) => (
-          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-            <div style={{ width: 10, height: 10, borderRadius: 2, background: color, opacity: 0.9 }} />
-            <span style={{ fontSize: 10, color: '#94a3b8' }}>{label}</span>
+      {nodeItems.length > 0 && (
+        <div>
+          <div style={{ fontSize: 9, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>Nodes</div>
+          {nodeItems.map(({ key, label, color }) => (
+            <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+              <div style={{ width: 10, height: 10, borderRadius: 2, background: color, opacity: 0.9 }} />
+              <span style={{ fontSize: 10, color: '#94a3b8' }}>{label}</span>
+              <span style={{ fontSize: 9, color: '#475569' }}>{nodeCounts[key as keyof typeof nodeCounts]}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      {edgeItems.length > 0 && (
+        <div>
+          <div style={{ fontSize: 9, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>Connections</div>
+          {edgeItems.map(({ key, label, color, dash }) => (
+            <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+              <svg width={22} height={10}><line x1={0} y1={5} x2={22} y2={5} stroke={color} strokeWidth={1.5} strokeDasharray={dash} /></svg>
+              <span style={{ fontSize: 10, color: '#94a3b8' }}>{label}</span>
+              <span style={{ fontSize: 9, color: '#475569' }}>{edgeCounts[key as keyof typeof edgeCounts]}</span>
+            </div>
+          ))}
+          <div style={{ borderTop: '1px solid #1e293b', color: '#475569', fontSize: 9, lineHeight: 1.5, marginTop: 6, paddingTop: 5 }}>
+            solid high · dashed medium · dotted uncertain
           </div>
-        ))}
-      </div>
-      <div>
-        <div style={{ fontSize: 9, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 6 }}>Connections</div>
-        {[['Runtime calls', '#60a5fa', undefined], ['Design structure', '#c084fc', undefined], ['Mixed', '#f472b6', undefined], ['Uncertain', '#64748b', '4,3']].map(([label, color, dash]) => (
-          <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-            <svg width={22} height={10}><line x1={0} y1={5} x2={22} y2={5} stroke={color as string} strokeWidth={1.5} strokeDasharray={dash as string | undefined} /></svg>
-            <span style={{ fontSize: 10, color: '#94a3b8' }}>{label}</span>
-          </div>
-        ))}
-      </div>
+        </div>
+      )}
     </div>
   )
+}
+
+function resolvedToRepoGraph(baseGraph: RepoGraph, resolved: ResolvedGraph, branchName: string): RepoGraph {
+  return {
+    meta: {
+      ...baseGraph.meta,
+      repoName: `${baseGraph.meta.repoName} / ${branchName}`,
+      analyzedAt: new Date().toISOString(),
+    },
+    nodes: resolved.nodes.map((node) => ({
+      id:           node.id,
+      label:        node.label,
+      type:         node.type,
+      parentId:     node.parentId,
+      depth:        node.depth,
+      files:        node.files,
+      detectedRole: node.detectedRole,
+      patterns:     node.patterns,
+      metadata:     node.metadata,
+    })),
+    edges: resolved.edges.map((edge) => ({
+      id:         edge.id,
+      source:     edge.source,
+      target:     edge.target,
+      edgeType:   edge.edgeType,
+      strength:   edge.strength,
+      label:      edge.label,
+      confidence: edge.confidence,
+    })),
+    overlay: {
+      version:       0,
+      nodeOverrides: {},
+      edgeOverrides: {},
+      manualNodes:   [],
+      manualEdges:   [],
+    },
+  }
 }
 
 // ------------------------------------------------------------

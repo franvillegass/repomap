@@ -2,7 +2,7 @@ import { openDB } from 'idb'
 import type { RepoGraph, GraphMeta } from '@/lib/pipeline/schemas/graph'
 
 const DB_NAME    = 'repomap'
-const DB_VERSION = 2
+const DB_VERSION = 3
 const STORE      = 'graphs'
 const PROGRESS_STORE = 'progress'
 
@@ -22,12 +22,24 @@ export interface PipelineProgress {
 
 async function getDB() {
   return openDB(DB_NAME, DB_VERSION, {
-    upgrade(db) {
+    upgrade(db, _oldVersion, _newVersion, tx) {
       if (!db.objectStoreNames.contains(STORE)) {
         db.createObjectStore(STORE, { keyPath: 'meta.repoUrl' })
       }
       if (!db.objectStoreNames.contains(PROGRESS_STORE)) {
         db.createObjectStore(PROGRESS_STORE, { keyPath: 'repoUrl' })
+      }
+      if (!db.objectStoreNames.contains('branches')) {
+        const branchStore = db.createObjectStore('branches', { keyPath: 'id' })
+        branchStore.createIndex('byRepoGraphId', 'repoGraphId', { unique: false })
+      } else {
+        const branchStore = (tx as any).objectStore('branches')
+        if (!branchStore.indexNames.contains('byRepoGraphId')) {
+          branchStore.createIndex('byRepoGraphId', 'repoGraphId', { unique: false })
+        }
+      }
+      if (!db.objectStoreNames.contains('branchDeltas')) {
+        db.createObjectStore('branchDeltas', { keyPath: 'branchId' })
       }
     },
   })

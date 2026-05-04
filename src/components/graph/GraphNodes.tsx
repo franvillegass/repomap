@@ -74,7 +74,9 @@ export const RepoNode = memo(function RepoNode(props: NodeProps<any>) {
     <div
       style={{
         background:   colors.bg,
-        border:       borderMain,
+        borderTop:    borderMain,
+        borderRight:  borderMain,
+        borderBottom: borderMain,
         borderLeft,
         borderRadius: 10,
         padding:      '10px 14px',

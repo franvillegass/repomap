@@ -59,6 +59,9 @@ export interface ManualEditorProps {
   /** 'create' = blank canvas (default). 'edit' = start from existing graph. */
   mode?:         'create' | 'edit'
   initialGraph?: RepoGraph
+  lockedNodeIds?: string[]
+  lockedEdgeIds?: string[]
+  contextLabel?:  string
   onComplete:    (graph: RepoGraph) => void
   onCancel?:     () => void
 }
@@ -151,6 +154,7 @@ function graphToRF(graph: RepoGraph): {
         files:        n.files,
         complexity:   n.metadata.complexity,
         depth:        n.depth,
+        parentId:     n.parentId,
         statusTag:    ov?.statusTag ?? n.metadata.statusTag,
       },
     }
@@ -183,7 +187,7 @@ function rfToGraph(
     id:           n.id,
     label:        (n.data.label as string),
     type:         n.data.nodeType,
-    parentId:     null,
+    parentId:     (n.data.parentId as string | null | undefined) ?? null,
     depth:        n.data.depth ?? 0,
     files:        (n.data.files as string[]) ?? [],
     detectedRole: (n.data.detectedRole as string) ?? '',
@@ -278,6 +282,9 @@ interface NewEdgeState {
 export default function ManualEditor({
   mode         = 'create',
   initialGraph,
+  lockedNodeIds = [],
+  lockedEdgeIds = [],
+  contextLabel,
   onComplete,
   onCancel,
 }: ManualEditorProps) {
@@ -326,6 +333,10 @@ export default function ManualEditor({
     () => edges.find((e) => e.id === selectedEdgeId) ?? null,
     [edges, selectedEdgeId],
   )
+  const lockedNodeSet = useMemo(() => new Set(lockedNodeIds), [lockedNodeIds])
+  const lockedEdgeSet = useMemo(() => new Set(lockedEdgeIds), [lockedEdgeIds])
+  const selectedNodeLocked = selectedNodeId ? lockedNodeSet.has(selectedNodeId) : false
+  const selectedEdgeLocked = selectedEdgeId ? lockedEdgeSet.has(selectedEdgeId) : false
 
   // ── Node click handler ──
   const onNodeClick: NodeMouseHandler = useCallback((_, node) => {
@@ -398,12 +409,12 @@ export default function ManualEditor({
 
   // ── Delete selected ──
   function handleDeleteSelected() {
-    if (selectedNodeId) {
+    if (selectedNodeId && !lockedNodeSet.has(selectedNodeId)) {
       setNodes((ns) => ns.filter((n) => n.id !== selectedNodeId))
       setEdges((es) => es.filter((e) => e.source !== selectedNodeId && e.target !== selectedNodeId))
       setSelectedNodeId(null)
     }
-    if (selectedEdgeId) {
+    if (selectedEdgeId && !lockedEdgeSet.has(selectedEdgeId)) {
       setEdges((es) => es.filter((e) => e.id !== selectedEdgeId))
       setSelectedEdgeId(null)
     }
@@ -412,6 +423,7 @@ export default function ManualEditor({
   // ── Update selected node inline ──
   function updateSelectedNode(patch: Partial<RFNodeData>) {
     if (!selectedNodeId) return
+    if (lockedNodeSet.has(selectedNodeId)) return
     setNodes((ns) => ns.map((n) =>
       n.id === selectedNodeId ? { ...n, data: { ...n.data, ...patch } } : n
     ))
@@ -420,6 +432,7 @@ export default function ManualEditor({
   // ── Update selected edge inline ──
   function updateSelectedEdge(patch: Partial<RFEdgeData & { label?: string }>) {
     if (!selectedEdgeId) return
+    if (lockedEdgeSet.has(selectedEdgeId)) return
     const { label, ...dataPatch } = patch
     setEdges((es) => es.map((e) => {
       if (e.id !== selectedEdgeId) return e
@@ -673,6 +686,11 @@ export default function ManualEditor({
                 <div style={{ fontSize: 12, fontWeight: 700, color: '#e2e8f0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {selectedNode.data.label as string}
                 </div>
+                {selectedNodeLocked && (
+                  <div style={{ background: 'rgba(148,163,184,0.08)', border: '1px solid rgba(148,163,184,0.14)', borderRadius: 6, color: '#64748b', fontSize: 10, lineHeight: 1.5, padding: '6px 8px' }}>
+                    This node belongs to the base graph or a parent branch. You can connect to it, but edits are saved only for this branch's own nodes.
+                  </div>
+                )}
 
                 <div>
                   <SectionTitle>Label</SectionTitle>
@@ -680,6 +698,7 @@ export default function ManualEditor({
                     value={(selectedNode.data.label as string) ?? ''}
                     onChange={(e) => updateSelectedNode({ label: e.target.value })}
                     style={inputStyle}
+                    disabled={selectedNodeLocked}
                   />
                 </div>
 
@@ -690,6 +709,7 @@ export default function ManualEditor({
                       <button
                         key={type}
                         onClick={() => updateSelectedNode({ nodeType: type, depth })}
+                        disabled={selectedNodeLocked}
                         style={{
                           background:   selectedNode.data.nodeType === type ? `rgba(${hexToRgb(color)},0.15)` : 'transparent',
                           border:       `1px solid ${selectedNode.data.nodeType === type ? color : '#1e293b'}`,
@@ -713,6 +733,7 @@ export default function ManualEditor({
                     value={(selectedNode.data.detectedRole as string) ?? ''}
                     onChange={(e) => updateSelectedNode({ detectedRole: e.target.value })}
                     style={inputStyle}
+                    disabled={selectedNodeLocked}
                     placeholder="e.g. authentication"
                   />
                 </div>
@@ -724,6 +745,7 @@ export default function ManualEditor({
                       <button
                         key={tag ?? 'none'}
                         onClick={() => updateSelectedNode({ statusTag: tag })}
+                        disabled={selectedNodeLocked}
                         style={{
                           background:   selectedNode.data.statusTag === tag ? 'rgba(99,102,241,0.15)' : 'transparent',
                           border:       `1px solid ${selectedNode.data.statusTag === tag ? '#6366f1' : '#1e293b'}`,
@@ -741,7 +763,7 @@ export default function ManualEditor({
                   </div>
                 </div>
 
-                <button onClick={handleDeleteSelected} style={deleteBtnStyle}>
+                <button onClick={handleDeleteSelected} disabled={selectedNodeLocked} style={{ ...deleteBtnStyle, opacity: selectedNodeLocked ? 0.35 : 1, cursor: selectedNodeLocked ? 'not-allowed' : 'pointer' }}>
                   ✕ Delete node
                 </button>
               </>
@@ -943,8 +965,8 @@ export default function ManualEditor({
           onConnect={onConnect}
           onNodeClick={onNodeClick}
           onEdgeClick={onEdgeClick}
-          nodeTypes={nodeTypes}
-          edgeTypes={edgeTypes}
+          nodeTypes={nodeTypes as any}
+          edgeTypes={edgeTypes as any}
           fitView
           fitViewOptions={{ padding: 0.3 }}
           deleteKeyCode={null}    // we handle Delete ourselves

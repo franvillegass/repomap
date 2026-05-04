@@ -25,6 +25,7 @@ import {
 import type { RepoGraph } from '@/lib/pipeline/schemas/graph'
 import type {
   Branch,
+  BranchDelta,
   BranchNode,
   BranchEdge,
   FictionalFile,
@@ -39,6 +40,8 @@ import {
   removeNodeFromBranch,
   addEdgeToBranch,
   removeEdgeFromBranch,
+  getDelta,
+  saveDelta,
   addFictionalFile,
   removeFictionalFile,
 } from './storage'
@@ -167,6 +170,9 @@ interface BranchContextValue extends BranchState {
   }) => Promise<BranchEdge>
 
   removeEdge: (edgeId: string) => Promise<void>
+
+  /** Replace the active branch's added nodes/edges from an edited resolved graph. */
+  replaceActiveBranchGraph: (graph: RepoGraph) => Promise<void>
 
   // --- Fictional file mutations (active branch only) ---
 
@@ -417,6 +423,56 @@ export function BranchProvider({ baseGraph, children }: BranchProviderProps) {
     await reResolveActive()
   }, [state.activeBranchId, reResolveActive])
 
+  const replaceActiveBranchGraph = useCallback(async (editedGraph: RepoGraph) => {
+    if (!state.activeBranchId) {
+      throw new Error('Cannot edit branch graph: no active branch.')
+    }
+
+    const activeBranch = state.branches.find((branch) => branch.id === state.activeBranchId)
+    if (!activeBranch) {
+      throw new Error('Cannot edit branch graph: active branch was not found.')
+    }
+
+    const parentResolved = await resolveBranch(baseGraphRef.current, activeBranch.parentBranchId)
+    const parentNodeIds = new Set(parentResolved.nodes.map((node) => node.id))
+    const parentEdgeIds = new Set(parentResolved.edges.map((edge) => edge.id))
+    const existingDelta = await getDelta(state.activeBranchId)
+
+    const nextDelta: BranchDelta = {
+      branchId: state.activeBranchId,
+      addedNodes: editedGraph.nodes
+        .filter((node) => !parentNodeIds.has(node.id))
+        .map((node) => ({
+          id:          node.id,
+          label:       node.label,
+          type:        node.type,
+          parentId:    node.parentId,
+          depth:       node.depth,
+          files:       node.files,
+          description: node.detectedRole || undefined,
+          metadata:    node.metadata,
+        })),
+      addedEdges: editedGraph.edges
+        .filter((edge) => !parentEdgeIds.has(edge.id))
+        .map((edge) => ({
+          id:         edge.id,
+          source:     edge.source,
+          target:     edge.target,
+          edgeType:   edge.edgeType,
+          strength:   edge.strength,
+          label:      edge.label,
+          confidence: edge.confidence,
+        })),
+      fictionalFiles: existingDelta?.fictionalFiles ?? {},
+    }
+
+    await saveDelta(nextDelta)
+    await saveBranch({ ...activeBranch, updatedAt: new Date().toISOString() })
+    await reloadBranches()
+    const resolvedGraph = await resolveBranch(baseGraphRef.current, state.activeBranchId)
+    dispatch({ type: 'GRAPH_UPDATED', resolvedGraph })
+  }, [state.activeBranchId, state.branches, reloadBranches])
+
   // ------------------------------------------------------------
   // addFictionalFileToNode
   // ------------------------------------------------------------
@@ -492,6 +548,7 @@ export function BranchProvider({ baseGraph, children }: BranchProviderProps) {
     removeNode,
     addEdge,
     removeEdge,
+    replaceActiveBranchGraph,
     addFictionalFileToNode,
     removeFictionalFileFromNode,
     isOnBranch,
@@ -508,6 +565,7 @@ export function BranchProvider({ baseGraph, children }: BranchProviderProps) {
     removeNode,
     addEdge,
     removeEdge,
+    replaceActiveBranchGraph,
     addFictionalFileToNode,
     removeFictionalFileFromNode,
     isOnBranch,

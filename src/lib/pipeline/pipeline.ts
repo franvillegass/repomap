@@ -132,7 +132,7 @@ export async function runAnalysisPipeline(input: PipelineInput): Promise<RepoGra
       throw new Error('pass2Nodes is required for Pass 2b but not available')
     }
     console.log('[Pipeline] Pass 2b: Edge mapping…')
-    const pass2EdgesPrompt = buildPass2EdgesPrompt(repoName, pass2Nodes.nodes)
+    const pass2EdgesPrompt = buildPass2EdgesPrompt(repoName, pass2Nodes.nodes, sampledContents)
     try {
       pass2Edges = await callModelWithSchema(
   pass2EdgesPrompt,

@@ -15,7 +15,7 @@ import type { Branch, BranchDelta } from './types'
 // DB schema version — bump if you add stores or indexes
 // ------------------------------------------------------------
 const DB_NAME    = 'repomap'
-const DB_VERSION = 2           // v1 = repo graphs, v2 adds branches
+const DB_VERSION = 3           // v3 ensures graph, progress and branch stores coexist
 
 type RepomapDB = {
   branches: {
@@ -36,18 +36,26 @@ async function getDB(): Promise<IDBPDatabase<RepomapDB>> {
   if (_db) return _db
 
   _db = await openDB<RepomapDB>(DB_NAME, DB_VERSION, {
-    upgrade(db, oldVersion) {
-      // v1 stores (repo_graphs) were created in a previous migration,
-      // only create them if they don't exist
-      if (!db.objectStoreNames.contains('repo_graphs' as never)) {
-        db.createObjectStore('repo_graphs' as never, { keyPath: 'meta.repoUrl' })
+    upgrade(db, _oldVersion, _newVersion, tx) {
+      if (!db.objectStoreNames.contains('graphs' as never)) {
+        db.createObjectStore('graphs' as never, { keyPath: 'meta.repoUrl' })
       }
 
-      // v2: branch stores
-      if (oldVersion < 2) {
+      if (!db.objectStoreNames.contains('progress' as never)) {
+        db.createObjectStore('progress' as never, { keyPath: 'repoUrl' })
+      }
+
+      if (!db.objectStoreNames.contains('branches')) {
         const branchStore = db.createObjectStore('branches', { keyPath: 'id' })
         branchStore.createIndex('byRepoGraphId', 'repoGraphId', { unique: false })
+      } else {
+        const branchStore = (tx as any).objectStore('branches')
+        if (!branchStore.indexNames.contains('byRepoGraphId')) {
+          branchStore.createIndex('byRepoGraphId', 'repoGraphId', { unique: false })
+        }
+      }
 
+      if (!db.objectStoreNames.contains('branchDeltas')) {
         db.createObjectStore('branchDeltas', { keyPath: 'branchId' })
       }
     },
