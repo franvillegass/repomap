@@ -41,6 +41,10 @@ export async function runAnalysisPipeline(input: PipelineInput): Promise<RepoGra
   const analysisVersion = hashFileTree(fileTree)
   const analyzedAt      = new Date().toISOString()
 
+  if (resumeFrom && hashFileTree(resumeFrom.fileTree) !== analysisVersion) {
+    throw new Error('Saved progress is outdated because the repository file tree changed. Start a new analysis.')
+  }
+
   let progress: PipelineProgress = resumeFrom || {
     repoUrl,
     repoName,
@@ -173,6 +177,7 @@ export async function runAnalysisPipeline(input: PipelineInput): Promise<RepoGra
       throw error
     }
     progress.pass3 = pass3
+
     progress.lastStep = 3
   }
 

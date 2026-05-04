@@ -10,17 +10,6 @@ import type { ModelConfig } from '@/lib/modelConfig'
 
 export function getModelFromConfig(config?: ModelConfig, pass?: string) {
   if (config?.provider === 'groq' && config.groqApiKey) {
-
-    
-    if (pass === '1' || pass === '2') {
-      return createGroq({ apiKey: config.groqApiKey })('llama-3.1-8b-instant')
-    }
-
-    if (pass === '3') {
-      return createGroq({ apiKey: config.groqApiKey })('llama-3.3-70b-versatile')
-    }
-
-    // fallback actual
     return createGroq({ apiKey: config.groqApiKey })('llama-3.3-70b-versatile')
   }
 

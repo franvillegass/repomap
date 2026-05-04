@@ -4,14 +4,15 @@ import { parseGithubUrl, fetchFileTree, fetchFileContent } from '@/lib/github/gi
 import { runAnalysisPipeline } from '@/lib/pipeline/pipeline'
 import { RateLimitExceededError } from '@/lib/pipeline/aiClient'
 import type { ModelConfig } from '@/lib/modelConfig'
+import type { PipelineProgress } from '@/lib/storage/graphStore'
 
 export async function POST(req: NextRequest) {
   try {
-    const { repoUrl, githubToken, modelConfig, resume } = (await req.json()) as {
+    const { repoUrl, githubToken, modelConfig, resumeFrom } = (await req.json()) as {
       repoUrl:      string
       githubToken?: string
       modelConfig?: ModelConfig
-      resume?:      boolean
+      resumeFrom?:  PipelineProgress
     }
 
     if (!repoUrl?.trim()) {
@@ -28,13 +29,8 @@ export async function POST(req: NextRequest) {
 
     const fileTree = await fetchFileTree(owner, repo, token)
 
-    let resumeFrom = undefined
-    if (resume) {
-      const { loadProgress } = await import('@/lib/storage/graphStore')
-      resumeFrom = await loadProgress(repoUrl)
-      if (!resumeFrom) {
-        return NextResponse.json({ error: 'No progress found to resume' }, { status: 400 })
-      }
+    if (resumeFrom && resumeFrom.repoUrl !== repoUrl) {
+      return NextResponse.json({ error: 'Progress does not match requested repoUrl' }, { status: 400 })
     }
 
     const graph = await runAnalysisPipeline({
@@ -64,7 +60,7 @@ export async function POST(req: NextRequest) {
 
 export function GET() {
   return NextResponse.json(
-    { error: 'Use POST: { repoUrl, githubToken?, modelConfig? }' },
+    { error: 'Use POST: { repoUrl, githubToken?, modelConfig?, resumeFrom? }' },
     { status: 400 },
   )
 }

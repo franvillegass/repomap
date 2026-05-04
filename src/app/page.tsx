@@ -3,7 +3,17 @@
 import { useState, useEffect, useRef } from 'react'
 import dynamic from 'next/dynamic'
 import type { RepoGraph, GraphMeta } from '@/lib/pipeline/schemas/graph'
-import { saveGraph, loadGraph, listGraphs, deleteGraph, listProgress, type PipelineProgress } from '@/lib/storage/graphStore'
+import {
+  saveGraph,
+  loadGraph,
+  listGraphs,
+  deleteGraph,
+  saveProgress,
+  loadProgress,
+  listProgress,
+  deleteProgress,
+  type PipelineProgress,
+} from '@/lib/storage/graphStore'
 import { BranchProvider } from '../../src/branches/UseBranches'
 import {
   type ModelConfig,
@@ -109,10 +119,15 @@ export default function Page() {
     abortRef.current = ctrl
 
     try {
+      const resumeFrom = await loadProgress(repoUrl)
+      if (!resumeFrom) {
+        throw new Error('No progress found to resume')
+      }
+
       const res = await fetch('/api/analyze', {
         method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ repoUrl, githubToken: token || undefined, modelConfig, resume: true }),
+        body:    JSON.stringify({ repoUrl, githubToken: token || undefined, modelConfig, resumeFrom }),
         signal:  ctrl.signal,
       })
 
@@ -120,7 +135,8 @@ export default function Page() {
 
       if (!res.ok) {
         const body = await res.json().catch(() => ({ error: res.statusText }))
-        throw new Error(body.error ?? `HTTP ${res.status}`)
+        await handleAnalyzeErrorBody(body)
+        return
       }
 
       setSteps(PASS_STEPS.map((s) => ({ ...s, state: 'done' })))
@@ -129,6 +145,7 @@ export default function Page() {
       const data: RepoGraph = await res.json()
 
       await saveGraph(data)
+      await deleteProgress(repoUrl)
       const updated = await listGraphs()
       setHistory(updated)
       const updatedProgress = await listProgress()
@@ -169,7 +186,8 @@ export default function Page() {
 
       if (!res.ok) {
         const body = await res.json().catch(() => ({ error: res.statusText }))
-        throw new Error(body.error ?? `HTTP ${res.status}`)
+        await handleAnalyzeErrorBody(body)
+        return
       }
 
       setSteps(PASS_STEPS.map((s) => ({ ...s, state: 'done' })))
@@ -178,6 +196,7 @@ export default function Page() {
       const data: RepoGraph = await res.json()
 
       await saveGraph(data)
+      await deleteProgress(trimmed)
       const updated = await listGraphs()
       setHistory(updated)
       const updatedProgress = await listProgress()
@@ -188,19 +207,6 @@ export default function Page() {
 
     } catch (err) {
       if ((err as Error).name === 'AbortError') return
-      const errorData = (err as any)?.response?.data || {}
-      if (errorData.rateLimit) {
-        setErrorMsg('Rate limit exceeded. Progress saved. You can resume tomorrow when limits reset.')
-        setStatus('error')
-        // Save progress if provided
-        if (errorData.progress) {
-          const { saveProgress } = await import('@/lib/storage/graphStore')
-          await saveProgress(errorData.progress)
-          const updatedProgress = await listProgress()
-          setProgressList(updatedProgress)
-        }
-        return
-      }
       clearTimers(timer)
       setErrorMsg((err as Error).message)
       setStatus('error')
@@ -214,6 +220,21 @@ export default function Page() {
     setErrorMsg('')
     setUrl('')
     setSteps(PASS_STEPS.map((s) => ({ ...s, state: 'pending' })))
+  }
+
+  async function handleAnalyzeErrorBody(body: any) {
+    if (body?.rateLimit) {
+      if (body.progress) {
+        await saveProgress(body.progress)
+        const updatedProgress = await listProgress()
+        setProgressList(updatedProgress)
+      }
+      setErrorMsg('Rate limit exceeded. Progress saved. You can resume tomorrow when limits reset.')
+      setStatus('error')
+      return
+    }
+
+    throw new Error(body?.error ?? 'Analysis request failed')
   }
 
   // ── Manual mode ──
@@ -404,7 +425,7 @@ export default function Page() {
                       </button>
                     </div>
                     <div style={{ fontSize: 9, color: '#1e3a5f', marginTop: 6 }}>
-                      Key stored in sessionStorage only · never sent to our servers
+                      Key stored in sessionStorage · sent only to this local analyzer
                     </div>
                   </div>
 
