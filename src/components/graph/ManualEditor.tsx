@@ -484,7 +484,7 @@ export default function ManualEditor({
   const hasSelected = selectedNodeId !== null || selectedEdgeId !== null
 
   return (
-    <div style={{ width: '100%', height: '100%', display: 'flex', background: '#0b0f1a', fontFamily: '"JetBrains Mono", monospace' }}>
+    <div style={{ width: '100%', height: '100%', display: 'flex', background: '#0b0f1a', fontFamily: '"Inter", "IBM Plex Sans", "Segoe UI", system-ui, sans-serif' }}>
 
       {/* ── Left sidebar ── */}
       <div style={{
@@ -1017,7 +1017,7 @@ const inputStyle: React.CSSProperties = {
   borderRadius: 6,
   padding:     '7px 10px',
   color:       '#e2e8f0',
-  fontSize:    11,
+  fontSize:    12,
   fontFamily:  'inherit',
   outline:     'none',
   boxSizing:   'border-box',
@@ -1030,7 +1030,7 @@ const actionBtnStyle: React.CSSProperties = {
   borderRadius: 7,
   padding:      '9px 0',
   color:        '#60a5fa',
-  fontSize:     11,
+  fontSize:     12,
   fontFamily:   'inherit',
   cursor:       'pointer',
   textAlign:    'center',

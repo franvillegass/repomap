@@ -473,8 +473,8 @@ const styles: Record<string, React.CSSProperties> = {
     borderRight: '1px solid #1e2130',
     display: 'flex',
     flexDirection: 'column',
-    fontFamily: "'IBM Plex Mono', 'Fira Mono', monospace",
-    fontSize: 12,
+    fontFamily: '"Inter", "IBM Plex Sans", "Segoe UI", system-ui, sans-serif',
+    fontSize: 13,
     color: '#c9d1d9',
     overflowY: 'auto',
     userSelect: 'none',
@@ -535,7 +535,7 @@ const styles: Record<string, React.CSSProperties> = {
 
   baseName: {
     flex: 1,
-    fontFamily: "'IBM Plex Mono', monospace",
+    fontFamily: 'inherit',
   },
 
   activePill: {
@@ -602,7 +602,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '6px 8px 6px 12px',
     borderRadius: 4,
     margin: '1px 6px',
-    transition: 'background 0.1s',
+    transition: 'background 0.14s ease, transform 0.14s ease',
     position: 'relative',
   },
 
@@ -612,6 +612,7 @@ const styles: Record<string, React.CSSProperties> = {
 
   branchRowHover: {
     background: '#0d1117',
+    transform: 'translateX(2px)',
   },
 
   branchMain: {
@@ -694,7 +695,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderBottom: '1px solid #1e3a5f',
     color: '#e2e8f0',
     fontSize: 12,
-    fontFamily: "'IBM Plex Mono', monospace",
+    fontFamily: 'inherit',
     padding: '2px 0',
     outline: 'none',
     width: '100%',
@@ -759,7 +760,7 @@ const styles: Record<string, React.CSSProperties> = {
     borderBottom: '1px solid #1e2130',
     color: '#e2e8f0',
     fontSize: 12,
-    fontFamily: "'IBM Plex Mono', monospace",
+    fontFamily: 'inherit',
     padding: '3px 0',
     outline: 'none',
     width: '100%',
@@ -780,7 +781,7 @@ const styles: Record<string, React.CSSProperties> = {
     padding: '3px 10px',
     cursor: 'pointer',
     fontSize: 11,
-    fontFamily: "'IBM Plex Mono', monospace",
+    fontFamily: 'inherit',
   },
 
   dimText: {

@@ -204,7 +204,7 @@ export default function GraphRenderer({ graph, onOverlayChange }: GraphRendererP
 
   // ── Render ──
   return (
-    <div style={{ width: '100%', height: '100%', display: 'flex', background: '#0b0f1a', fontFamily: '"JetBrains Mono", "Fira Mono", monospace' }}>
+    <div style={{ width: '100%', height: '100%', display: 'flex', background: '#0b0f1a', fontFamily: '"Inter", "IBM Plex Sans", "Segoe UI", system-ui, sans-serif' }}>
 
       {/* ── Sidebar ── */}
       <div style={sidebarStyle}>
@@ -356,7 +356,7 @@ export default function GraphRenderer({ graph, onOverlayChange }: GraphRendererP
             padding: '5px 14px',
             display: 'flex', alignItems: 'center', gap: 10,
             backdropFilter: 'blur(6px)',
-            fontSize: 11, fontFamily: '"JetBrains Mono", monospace',
+            fontSize: 12, fontFamily: 'inherit',
           }}>
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: activeBranch.color ?? '#60a5fa', flexShrink: 0, display: 'inline-block' }} />
             <span style={{ color: '#60a5fa', fontWeight: 700 }}>⑂ {activeBranch.name}</span>
@@ -452,9 +452,9 @@ export default function GraphRenderer({ graph, onOverlayChange }: GraphRendererP
 
 function Section({ title, subtitle, children }: { title: string; subtitle?: string; children: React.ReactNode }) {
   return (
-    <div>
-      <div style={{ fontSize: 9, color: '#475569', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 2 }}>{title}</div>
-      {subtitle && <div style={{ fontSize: 9, color: '#334155', marginBottom: 8 }}>{subtitle}</div>}
+    <div style={{ animation: 'fadeUp 0.25s ease both' }}>
+      <div style={{ fontSize: 10, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: 2 }}>{title}</div>
+      {subtitle && <div style={{ fontSize: 10, color: '#475569', marginBottom: 8 }}>{subtitle}</div>}
       {children}
     </div>
   )
@@ -467,7 +467,7 @@ function ToggleRow({ label, color, count, value, onChange }: {
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
         <div style={{ width: 10, height: 10, borderRadius: 2, background: color, opacity: value ? 1 : 0.25, flexShrink: 0 }} />
-        <span style={{ fontSize: 11, color: value ? '#94a3b8' : '#334155' }}>{label}</span>
+        <span style={{ fontSize: 12, color: value ? '#cbd5e1' : '#475569' }}>{label}</span>
         <span style={{ fontSize: 9, color: '#334155', background: '#0f172a', border: '1px solid #1e293b', borderRadius: 4, padding: '1px 5px' }}>{count}</span>
       </div>
       <button onClick={() => onChange(!value)} style={{ width: 32, height: 18, borderRadius: 9, border: 'none', cursor: 'pointer', background: value ? '#1d4ed8' : '#1e293b', position: 'relative', transition: 'background 0.2s', flexShrink: 0 }}>
@@ -479,9 +479,9 @@ function ToggleRow({ label, color, count, value, onChange }: {
 
 function ExportBtn({ label, sub, onClick }: { label: string; sub: string; onClick: () => void }) {
   return (
-    <button onClick={onClick} style={{ background: '#0f172a', border: '1px solid #1e293b', borderRadius: 8, padding: '12px 14px', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', width: '100%' }}>
-      <div style={{ fontSize: 12, color: '#93c5fd', fontWeight: 600 }}>{label}</div>
-      <div style={{ fontSize: 10, color: '#475569', marginTop: 2 }}>{sub}</div>
+    <button className="repo-control" onClick={onClick} style={{ background: '#0f172a', border: '1px solid #1e293b', borderRadius: 8, padding: '12px 14px', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left', width: '100%' }}>
+      <div style={{ fontSize: 13, color: '#93c5fd', fontWeight: 700 }}>{label}</div>
+      <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>{sub}</div>
     </button>
   )
 }
@@ -520,24 +520,25 @@ const sidebarStyle: React.CSSProperties = {
   background: '#080e1a', borderRight: '1px solid #1e293b',
   padding: '16px 14px', overflowY: 'auto',
   display: 'flex', flexDirection: 'column',
+  animation: 'fadeUp 0.32s ease both',
 }
 
 const tabBtnStyle: React.CSSProperties = {
   flex: 1, background: 'none', border: 'none', borderBottom: '2px solid transparent',
-  padding: '8px 2px', fontSize: 9, cursor: 'pointer', fontFamily: 'inherit',
-  letterSpacing: '0.04em',
+  padding: '8px 2px', fontSize: 10, cursor: 'pointer', fontFamily: 'inherit',
+  letterSpacing: '0.02em',
 }
 
 const ghostBtn: React.CSSProperties = {
   background: 'none', border: '1px solid #1e293b', borderRadius: 6,
-  padding: '6px 10px', fontSize: 10, color: '#475569',
+  padding: '6px 10px', fontSize: 11, color: '#64748b',
   cursor: 'pointer', fontFamily: 'inherit',
 }
 
 const sidebarInputStyle: React.CSSProperties = {
   width: '100%', background: '#0f172a', border: '1px solid #1e293b',
   borderRadius: 6, padding: '7px 10px', color: '#e2e8f0',
-  fontSize: 11, fontFamily: 'inherit', outline: 'none',
+  fontSize: 12, fontFamily: 'inherit', outline: 'none',
   boxSizing: 'border-box',
 }
 

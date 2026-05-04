@@ -241,6 +241,7 @@ export default function Page() {
   if (manualMode) {
     return (
       <div style={{ width: '100vw', height: '100vh' }}>
+        <InteractionStyles />
         <ManualEditor
           mode="create"
           onComplete={async (g) => {
@@ -261,8 +262,9 @@ export default function Page() {
     return (
       <BranchProvider baseGraph={graph}>
         <div style={{ width: '100vw', height: '100vh', position: 'relative' }}>
+          <InteractionStyles />
           <GraphRenderer graph={graph} />
-          <button onClick={handleReset} style={resetButtonStyle}>
+          <button className="repo-control" onClick={handleReset} style={resetButtonStyle}>
             ← new repo
           </button>
         </div>
@@ -272,9 +274,10 @@ export default function Page() {
 
   return (
     <div style={pageStyle}>
+      <InteractionStyles />
       <GridBackground />
 
-      <div style={cardStyle}>
+      <div className="repo-card" style={cardStyle}>
         <div style={{ marginBottom: 28, animation: 'fadeUp 0.4s ease both' }}>
           <div style={logoStyle}>
             <span style={{ color: '#3b82f6' }}>{'{'}</span>
@@ -295,6 +298,7 @@ export default function Page() {
               {/* Compact selector row */}
               {!showModelPicker ? (
                 <button
+                  className="repo-control"
                   onClick={() => setShowModelPicker(true)}
                   style={{
                     width:          '100%',
@@ -323,10 +327,11 @@ export default function Page() {
                   <span style={{ fontSize: 9, color: '#1e3a5f' }}>change ›</span>
                 </button>
               ) : (
-                <div style={{ background: '#0a111f', border: '1px solid #1e293b', borderRadius: 8, padding: '14px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div className="repo-picker" style={{ background: '#0a111f', border: '1px solid #1e293b', borderRadius: 8, padding: '14px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
 
                   {/* Premium option */}
                   <button
+                    className="repo-control"
                     onClick={() => applyModelConfig({ provider: 'anthropic' })}
                     style={{
                       background:   modelConfig.provider === 'anthropic' ? 'rgba(59,130,246,0.1)' : 'transparent',
@@ -369,6 +374,7 @@ export default function Page() {
                       Llama 3.3 70B · limited tokens/min · progress saves between sessions
                     </div>
                     <input
+                      className="repo-input"
                       value={groqKeyInput}
                       onChange={(e) => setGroqKeyInput(e.target.value)}
                       placeholder="gsk_…  paste your Groq API key"
@@ -393,6 +399,7 @@ export default function Page() {
                     />
                     <div style={{ display: 'flex', gap: 6 }}>
                       <button
+                        className="repo-control"
                         onClick={() => {
                           if (groqKeyInput.trim().startsWith('gsk_')) {
                             applyModelConfig({ provider: 'groq', groqApiKey: groqKeyInput.trim() })
@@ -414,6 +421,7 @@ export default function Page() {
                         Use Groq
                       </button>
                       <button
+                        className="repo-control"
                         onClick={() => setShowModelPicker(false)}
                         style={{
                           background: 'transparent', border: '1px solid #1e293b',
@@ -460,6 +468,7 @@ export default function Page() {
               <div style={{ flex: 1, height: 1, background: '#0f1f35' }} />
             </div>
             <button
+              className="repo-control"
               onClick={() => setManualMode(true)}
               style={{
                 width:        '100%',
@@ -530,6 +539,7 @@ function InputForm({ url, token, showToken, onUrlChange, onTokenChange, onToggle
       <div style={{ position: 'relative' }}>
         <span style={inputPrefixStyle}>github.com/</span>
         <input
+          className="repo-input"
           type="text" value={url} autoFocus spellCheck={false}
           placeholder="owner/repository"
           onChange={(e) => onUrlChange(e.target.value)}
@@ -538,7 +548,7 @@ function InputForm({ url, token, showToken, onUrlChange, onTokenChange, onToggle
         />
       </div>
 
-      <button onClick={onToggleToken} style={ghostButtonStyle}>
+      <button className="repo-ghost" onClick={onToggleToken} style={ghostButtonStyle}>
         <span style={{ color: showToken ? '#3b82f6' : '#475569' }}>{showToken ? '▾' : '▸'}</span>
         {' '}<span style={{ color: '#475569' }}>
           {showToken ? 'hide token' : 'add github token'}{' '}
@@ -548,6 +558,7 @@ function InputForm({ url, token, showToken, onUrlChange, onTokenChange, onToggle
 
       {showToken && (
         <input
+          className="repo-input repo-reveal"
           type="password" value={token} spellCheck={false}
           placeholder="ghp_xxxxxxxxxxxxxxxxxxxx"
           onChange={(e) => onTokenChange(e.target.value)}
@@ -556,13 +567,13 @@ function InputForm({ url, token, showToken, onUrlChange, onTokenChange, onToggle
       )}
 
       {error && (
-        <div style={errorBoxStyle}>
+        <div className="repo-error" style={errorBoxStyle}>
           <span style={{ color: '#f87171' }}>✕</span> {error}
-          <button onClick={onReset} style={{ ...ghostButtonStyle, marginLeft: 8, fontSize: 10 }}>clear</button>
+          <button className="repo-ghost" onClick={onReset} style={{ ...ghostButtonStyle, marginLeft: 8, fontSize: 10 }}>clear</button>
         </div>
       )}
 
-      <button onClick={onSubmit} disabled={!url.trim()} style={url.trim() ? submitButtonStyle : disabledButtonStyle}>
+      <button className="repo-submit" onClick={onSubmit} disabled={!url.trim()} style={url.trim() ? submitButtonStyle : disabledButtonStyle}>
         analyze repository <span style={{ opacity: 0.6 }}>→</span>
       </button>
     </div>
@@ -574,8 +585,15 @@ function InputForm({ url, token, showToken, onUrlChange, onTokenChange, onToggle
 // ------------------------------------------------------------
 
 function LoadingView({ steps, onCancel }: { steps: PassStep[]; onCancel: () => void }) {
+  const doneCount = steps.filter((step) => step.state === 'done').length
+  const runningIndex = steps.findIndex((step) => step.state === 'running')
+  const progress = Math.min(100, Math.max(8, ((doneCount + (runningIndex >= 0 ? 0.45 : 0)) / steps.length) * 100))
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', animation: 'fadeUp 0.3s ease both' }}>
+      <div style={loadingTrackStyle}>
+        <div className="repo-progress-bar" style={{ ...loadingFillStyle, width: `${progress}%` }} />
+      </div>
       {steps.map((step, i) => {
         const isRunning = step.state === 'running'
         const isDone    = step.state === 'done'
@@ -584,7 +602,10 @@ function LoadingView({ steps, onCancel }: { steps: PassStep[]; onCancel: () => v
           <div key={step.id} style={{
             display: 'flex', alignItems: 'flex-start', gap: 14,
             padding: '13px 0', borderBottom: i < 2 ? '1px solid #0f1f35' : 'none',
-            opacity: isPending ? 0.3 : 1, transition: 'opacity 0.3s ease',
+            opacity: isPending ? 0.38 : 1,
+            transform: isRunning ? 'translateX(3px)' : 'translateX(0)',
+            transition: 'opacity 0.3s ease, transform 0.25s ease',
+            animation: `stepIn 0.35s ${i * 0.08}s ease both`,
           }}>
             <div style={{ width: 20, marginTop: 1, flexShrink: 0, textAlign: 'center' }}>
               {isDone    && <span style={{ color: '#34d399', fontSize: 13 }}>✓</span>}
@@ -601,7 +622,7 @@ function LoadingView({ steps, onCancel }: { steps: PassStep[]; onCancel: () => v
           </div>
         )
       })}
-      <button onClick={onCancel} style={{ ...ghostButtonStyle, marginTop: 18, textAlign: 'center', width: '100%' }}>cancel</button>
+      <button className="repo-ghost" onClick={onCancel} style={{ ...ghostButtonStyle, marginTop: 18, textAlign: 'center', width: '100%' }}>cancel</button>
     </div>
   )
 }
@@ -624,7 +645,7 @@ function HistoryList({ items, onLoad, onDelete }: HistoryListProps) {
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
         {items.map((meta) => (
-          <div key={meta.repoUrl} onClick={() => onLoad(meta.repoUrl)} style={historyRowStyle}>
+          <div className="repo-row" key={meta.repoUrl} onClick={() => onLoad(meta.repoUrl)} style={historyRowStyle}>
             <div style={{ flex: 1, overflow: 'hidden' }}>
               <div style={{ fontSize: 12, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {meta.repoName}
@@ -634,6 +655,7 @@ function HistoryList({ items, onLoad, onDelete }: HistoryListProps) {
               </div>
             </div>
             <button
+              className="repo-ghost"
               onClick={(e) => onDelete(meta.repoUrl, e)}
               style={{ ...ghostButtonStyle, color: '#334155', fontSize: 16, lineHeight: 1, padding: '2px 6px' }}
               title="Delete"
@@ -664,7 +686,7 @@ function ProgressList({ items, onResume }: ProgressListProps) {
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
         {items.map((progress) => (
-          <div key={progress.repoUrl} onClick={() => onResume(progress.repoUrl)} style={historyRowStyle}>
+          <div className="repo-row" key={progress.repoUrl} onClick={() => onResume(progress.repoUrl)} style={historyRowStyle}>
             <div style={{ flex: 1, overflow: 'hidden' }}>
               <div style={{ fontSize: 12, color: '#94a3b8', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {progress.repoName}
@@ -684,6 +706,186 @@ function ProgressList({ items, onResume }: ProgressListProps) {
 // ------------------------------------------------------------
 // Misc components
 // ------------------------------------------------------------
+
+function InteractionStyles() {
+  return (
+    <style>{`
+      html, body {
+        font-family: "Inter", "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+        font-size: 15px;
+        text-rendering: geometricPrecision;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+
+      button, input, textarea, select {
+        font-family: inherit;
+      }
+
+      button {
+        transition:
+          transform 160ms ease,
+          border-color 160ms ease,
+          background-color 160ms ease,
+          color 160ms ease,
+          box-shadow 160ms ease,
+          opacity 160ms ease;
+      }
+
+      button:not(:disabled):hover {
+        transform: translateY(-1px);
+        box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
+      }
+
+      button:not(:disabled):active {
+        transform: translateY(0) scale(0.985);
+        box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+      }
+
+      button:disabled {
+        opacity: 0.68;
+      }
+
+      input, textarea, select {
+        transition:
+          border-color 160ms ease,
+          background-color 160ms ease,
+          box-shadow 160ms ease,
+          color 160ms ease;
+      }
+
+      input:focus, textarea:focus, select:focus {
+        border-color: #3b82f6 !important;
+        background-color: #08172a !important;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.14);
+      }
+
+      .repo-card {
+        animation: cardLift 480ms ease both;
+      }
+
+      .repo-picker {
+        animation: unfold 220ms ease both;
+        transform-origin: top center;
+      }
+
+      .repo-control:hover {
+        border-color: #2f4f86 !important;
+        color: #cbd5e1 !important;
+      }
+
+      .repo-ghost:hover {
+        color: #93c5fd !important;
+        box-shadow: none;
+      }
+
+      .repo-submit:not(:disabled) {
+        position: relative;
+        overflow: hidden;
+      }
+
+      .repo-submit:not(:disabled)::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(90deg, transparent, rgba(255,255,255,0.16), transparent);
+        transform: translateX(-120%);
+        transition: transform 420ms ease;
+      }
+
+      .repo-submit:not(:disabled):hover::after {
+        transform: translateX(120%);
+      }
+
+      .repo-row {
+        animation: rowIn 260ms ease both;
+      }
+
+      .repo-row:hover {
+        background: rgba(59, 130, 246, 0.08) !important;
+        border-color: rgba(59, 130, 246, 0.25) !important;
+        transform: translateX(3px);
+      }
+
+      .repo-error {
+        animation: errorPop 220ms ease both;
+      }
+
+      .repo-reveal {
+        animation: revealDown 180ms ease both;
+      }
+
+      .repo-progress-bar {
+        transition: width 420ms cubic-bezier(.2,.8,.2,1);
+      }
+
+      .react-flow__controls button:hover,
+      .react-flow__minimap:hover {
+        filter: brightness(1.16);
+      }
+
+      @keyframes fadeUp {
+        from { opacity: 0; transform: translateY(8px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
+      @keyframes cardLift {
+        from { opacity: 0; transform: translateY(12px) scale(0.985); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+      }
+
+      @keyframes unfold {
+        from { opacity: 0; transform: translateY(-4px) scaleY(0.97); }
+        to { opacity: 1; transform: translateY(0) scaleY(1); }
+      }
+
+      @keyframes rowIn {
+        from { opacity: 0; transform: translateY(4px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
+      @keyframes revealDown {
+        from { opacity: 0; transform: translateY(-5px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
+      @keyframes errorPop {
+        0% { opacity: 0; transform: scale(0.985); }
+        70% { opacity: 1; transform: scale(1.01); }
+        100% { opacity: 1; transform: scale(1); }
+      }
+
+      @keyframes stepIn {
+        from { opacity: 0; transform: translateX(-6px); }
+        to { opacity: 1; transform: translateX(0); }
+      }
+
+      @keyframes pulse {
+        0%, 100% { opacity: 0.45; transform: scale(0.94); }
+        50% { opacity: 1; transform: scale(1.08); }
+      }
+
+      @keyframes blink {
+        0%, 45% { opacity: 1; }
+        46%, 100% { opacity: 0; }
+      }
+
+      @keyframes shimmer {
+        from { background-position: 120% 0; }
+        to { background-position: -120% 0; }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+          animation-duration: 1ms !important;
+          animation-iteration-count: 1 !important;
+          scroll-behavior: auto !important;
+          transition-duration: 1ms !important;
+        }
+      }
+    `}</style>
+  )
+}
 
 function GridBackground() {
   return (
@@ -743,6 +945,7 @@ const pageStyle: React.CSSProperties = {
   minHeight: '100vh', display: 'flex', flexDirection: 'column',
   alignItems: 'center', justifyContent: 'center', padding: 24,
   position: 'relative', gap: 16,
+  fontFamily: '"Inter", "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif',
 }
 
 const cardStyle: React.CSSProperties = {
@@ -753,33 +956,33 @@ const cardStyle: React.CSSProperties = {
 }
 
 const logoStyle: React.CSSProperties = {
-  fontSize: 28, fontWeight: 700, letterSpacing: '-0.02em', color: '#e2e8f0',
+  fontSize: 30, fontWeight: 760, letterSpacing: '0', color: '#f1f5f9',
 }
 
 const subtitleStyle: React.CSSProperties = {
-  fontSize: 11, color: '#334155', marginTop: 6, letterSpacing: '0.04em',
+  fontSize: 12, color: '#52657d', marginTop: 6, letterSpacing: '0.02em',
 }
 
 const inputStyle: React.CSSProperties = {
   width: '100%', background: '#06111f', border: '1px solid #1a2744',
   borderRadius: 8, padding: '11px 14px', color: '#e2e8f0',
-  fontSize: 13, fontFamily: 'inherit', outline: 'none',
+  fontSize: 14, fontFamily: 'inherit', outline: 'none',
 }
 
 const inputPrefixStyle: React.CSSProperties = {
   position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)',
-  fontSize: 13, color: '#334155', pointerEvents: 'none', userSelect: 'none',
+  fontSize: 14, color: '#52657d', pointerEvents: 'none', userSelect: 'none',
 }
 
 const ghostButtonStyle: React.CSSProperties = {
   background: 'none', border: 'none', cursor: 'pointer',
-  fontSize: 11, color: '#475569', fontFamily: 'inherit', padding: 0, textAlign: 'left',
+  fontSize: 12, color: '#64748b', fontFamily: 'inherit', padding: 0, textAlign: 'left',
 }
 
 const submitButtonStyle: React.CSSProperties = {
   width: '100%', marginTop: 4, padding: '13px 0', background: '#1d4ed8',
-  border: 'none', borderRadius: 8, color: '#eff6ff', fontSize: 13,
-  fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer', letterSpacing: '0.03em',
+  border: 'none', borderRadius: 8, color: '#eff6ff', fontSize: 14,
+  fontWeight: 700, fontFamily: 'inherit', cursor: 'pointer', letterSpacing: '0.02em',
 }
 
 const disabledButtonStyle: React.CSSProperties = {
@@ -788,21 +991,38 @@ const disabledButtonStyle: React.CSSProperties = {
 
 const errorBoxStyle: React.CSSProperties = {
   background: 'rgba(248,113,113,0.07)', border: '1px solid rgba(248,113,113,0.2)',
-  borderRadius: 7, padding: '10px 12px', fontSize: 11, color: '#fca5a5',
+  borderRadius: 7, padding: '10px 12px', fontSize: 12, color: '#fca5a5',
   display: 'flex', alignItems: 'center', gap: 6,
 }
 
 const historyRowStyle: React.CSSProperties = {
   display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px',
   borderRadius: 7, cursor: 'pointer', border: '1px solid transparent',
-  transition: 'background 0.12s ease',
+  transition: 'background 0.16s ease, border-color 0.16s ease, transform 0.16s ease',
+}
+
+const loadingTrackStyle: React.CSSProperties = {
+  width: '100%',
+  height: 5,
+  background: '#0f1f35',
+  borderRadius: 999,
+  overflow: 'hidden',
+  marginBottom: 12,
+}
+
+const loadingFillStyle: React.CSSProperties = {
+  height: '100%',
+  borderRadius: 999,
+  background: 'linear-gradient(90deg, #1d4ed8, #60a5fa, #a78bfa, #60a5fa)',
+  backgroundSize: '220% 100%',
+  animation: 'shimmer 1.6s linear infinite',
 }
 
 const resetButtonStyle: React.CSSProperties = {
   position: 'absolute', top: 16, right: 16,
   background: 'rgba(15,23,42,0.9)', border: '1px solid #1e293b',
-  borderRadius: 7, padding: '7px 14px', color: '#64748b',
-  fontSize: 11, fontFamily: 'inherit', cursor: 'pointer',
+  borderRadius: 7, padding: '7px 14px', color: '#94a3b8',
+  fontSize: 12, fontFamily: 'inherit', cursor: 'pointer',
   backdropFilter: 'blur(8px)', zIndex: 20,
 }
 
