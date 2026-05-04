@@ -11,8 +11,53 @@ html, body, #__next {
 body {
   background: #050a12;
   color: #e2e8f0;
-  font-family: ui-monospace, 'Cascadia Code', 'SF Mono', 'Menlo', monospace;
+  font-family: "Inter", "IBM Plex Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  font-size: 15px;
+  text-rendering: geometricPrecision;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button, input, textarea, select {
+  font-family: inherit;
+}
+
+button {
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background-color 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease,
+    opacity 160ms ease;
+}
+
+button:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
+}
+
+button:not(:disabled):active {
+  transform: translateY(0) scale(0.985);
+  box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+}
+
+button:disabled {
+  opacity: 0.68;
+}
+
+input, textarea, select {
+  transition:
+    border-color 160ms ease,
+    background-color 160ms ease,
+    box-shadow 160ms ease,
+    color 160ms ease;
+}
+
+input:focus, textarea:focus, select:focus {
+  border-color: #3b82f6 !important;
+  background-color: #08172a !important;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.14);
 }
 
 /* Scrollbar */
@@ -31,15 +76,110 @@ body {
   background: #1e293b !important;
 }
 
+.react-flow__controls button:hover,
+.react-flow__minimap:hover {
+  filter: brightness(1.16);
+}
+
+.repo-card {
+  animation: cardLift 480ms ease both;
+}
+
+.repo-picker {
+  animation: unfold 220ms ease both;
+  transform-origin: top center;
+}
+
+.repo-control:hover {
+  border-color: #2f4f86 !important;
+  color: #cbd5e1 !important;
+}
+
+.repo-ghost:hover {
+  color: #93c5fd !important;
+  box-shadow: none;
+}
+
+.repo-submit:not(:disabled) {
+  position: relative;
+  overflow: hidden;
+}
+
+.repo-submit:not(:disabled)::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.16), transparent);
+  transform: translateX(-120%);
+  transition: transform 420ms ease;
+}
+
+.repo-submit:not(:disabled):hover::after {
+  transform: translateX(120%);
+}
+
+.repo-row {
+  animation: rowIn 260ms ease both;
+}
+
+.repo-row:hover {
+  background: rgba(59, 130, 246, 0.08) !important;
+  border-color: rgba(59, 130, 246, 0.25) !important;
+  transform: translateX(3px);
+}
+
+.repo-error {
+  animation: errorPop 220ms ease both;
+}
+
+.repo-reveal {
+  animation: revealDown 180ms ease both;
+}
+
+.repo-progress-bar {
+  transition: width 420ms cubic-bezier(.2,.8,.2,1);
+}
+
 /* Animations */
 @keyframes fadeUp {
-  from { opacity: 0; transform: translateY(12px); }
+  from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes cardLift {
+  from { opacity: 0; transform: translateY(12px) scale(0.985); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes unfold {
+  from { opacity: 0; transform: translateY(-4px) scaleY(0.97); }
+  to   { opacity: 1; transform: translateY(0) scaleY(1); }
+}
+
+@keyframes rowIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes revealDown {
+  from { opacity: 0; transform: translateY(-5px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes errorPop {
+  0%   { opacity: 0; transform: scale(0.985); }
+  70%  { opacity: 1; transform: scale(1.01); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes stepIn {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0.4; }
+  0%, 100% { opacity: 0.45; transform: scale(0.94); }
+  50%      { opacity: 1; transform: scale(1.08); }
 }
 
 @keyframes scan {
@@ -48,7 +188,20 @@ body {
 }
 
 @keyframes blink {
-  0%, 100% { opacity: 1; }
-  49%       { opacity: 1; }
-  50%       { opacity: 0; }
+  0%, 45%   { opacity: 1; }
+  46%, 100% { opacity: 0; }
+}
+
+@keyframes shimmer {
+  from { background-position: 120% 0; }
+  to   { background-position: -120% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 1ms !important;
+  }
 }
