@@ -5,21 +5,21 @@ import type {
   Overlay,
 } from './schemas/graph'
 import {
-  Pass1OutputSchema,
   Pass2NodesSchema,
   Pass2EdgesSchema,
   Pass3OutputSchema,
   type Pass1Output,
   type Pass2Output,
 } from './schemas/validation'
-import { buildPass1Prompt, formatFileTree } from './prompts/pass1'
+import { runPass1 }                                     from './prompts/pass1'
 import { buildPass2NodesPrompt, buildPass2EdgesPrompt } from './prompts/pass2'
-import { buildPass3Prompt } from './prompts/pass3'
-import { formatSampledFiles } from './sampler/fileSampler'
-import { callModelWithSchema } from './aiClient'
-import type { ModelConfig } from '@/lib/modelConfig'
-import type { PipelineProgress } from '@/lib/storage/graphStore'
-import { RateLimitExceededError } from '@/lib/pipeline/aiClient'
+import { buildPass3Prompt }                             from './prompts/pass3'
+import { chunkSampledFiles, formatSampledFiles }        from './sampler/fileSampler'
+import type { ProviderHint }                            from './sampler/fileSampler'
+import { callModelWithSchema }                          from './aiClient'
+import { RateLimitExceededError }                       from '@/lib/pipeline/aiClient'
+import type { ModelConfig }                             from '@/lib/modelConfig'
+import type { PipelineProgress }                        from '@/lib/storage/graphStore'
 
 // ------------------------------------------------------------
 // Pipeline inputs
@@ -34,12 +34,92 @@ export interface PipelineInput {
 }
 
 // ------------------------------------------------------------
+// Helpers
+// ------------------------------------------------------------
+
+function getProviderHint(modelConfig?: ModelConfig): ProviderHint {
+  return modelConfig?.provider === 'groq' ? 'groq' : 'standard'
+}
+
+/**
+ * Runs Pass 2a (nodes) over one or more chunks of file contents.
+ * If provider is Groq, splits into chunks to stay under TPM limit.
+ * Merges node arrays from all chunks.
+ */
+async function runPass2Nodes(
+  repoName:     string,
+  tentativeModules: Pass1Output['tentativeModules'],
+  fileContents: { path: string; content: string }[],
+  estimatedSize: Pass1Output['estimatedSize'],
+  provider:     ProviderHint,
+  options:      { modelConfig?: ModelConfig }
+) {
+  const chunks = chunkSampledFiles(fileContents, estimatedSize, provider)
+  console.log(`[Pipeline] Pass 2a: ${chunks.length} chunk(s) for nodes`)
+
+  const allNodes: any[] = []
+
+  for (let i = 0; i < chunks.length; i++) {
+    if (chunks.length > 1) console.log(`[Pipeline] Pass 2a chunk ${i + 1}/${chunks.length}`)
+    const prompt = buildPass2NodesPrompt(repoName, tentativeModules, chunks[i])
+    const result = await callModelWithSchema(prompt, Pass2NodesSchema, { modelConfig: options.modelConfig, pass: '2a' })
+    allNodes.push(...result.nodes)
+  }
+
+  // Deduplicate by id — later chunks may re-detect the same modules
+  const seen = new Set<string>()
+  const dedupedNodes = allNodes.filter(n => {
+    if (seen.has(n.id)) return false
+    seen.add(n.id)
+    return true
+  })
+
+  return { nodes: dedupedNodes }
+}
+
+/**
+ * Runs Pass 2b (edges) over one or more chunks of file contents.
+ * Merges edge arrays from all chunks, deduplicating by id.
+ */
+async function runPass2Edges(
+  repoName:     string,
+  nodes:        any[],
+  fileContents: { path: string; content: string }[],
+  estimatedSize: Pass1Output['estimatedSize'],
+  provider:     ProviderHint,
+  options:      { modelConfig?: ModelConfig }
+) {
+  const chunks = chunkSampledFiles(fileContents, estimatedSize, provider)
+  console.log(`[Pipeline] Pass 2b: ${chunks.length} chunk(s) for edges`)
+
+  const allEdges: any[] = []
+
+  for (let i = 0; i < chunks.length; i++) {
+    if (chunks.length > 1) console.log(`[Pipeline] Pass 2b chunk ${i + 1}/${chunks.length}`)
+    const prompt = buildPass2EdgesPrompt(repoName, nodes, chunks[i])
+    const result = await callModelWithSchema(prompt, Pass2EdgesSchema, { modelConfig: options.modelConfig, pass: '2b' })
+    allEdges.push(...result.edges)
+  }
+
+  // Deduplicate edges by id
+  const seen = new Set<string>()
+  const dedupedEdges = allEdges.filter(e => {
+    if (seen.has(e.id)) return false
+    seen.add(e.id)
+    return true
+  })
+
+  return { edges: dedupedEdges }
+}
+
+// ------------------------------------------------------------
 // Main pipeline
 // ------------------------------------------------------------
 export async function runAnalysisPipeline(input: PipelineInput): Promise<RepoGraph> {
   const { repoUrl, repoName, fileTree, fetchFileContent, modelConfig, resumeFrom } = input
   const analysisVersion = hashFileTree(fileTree)
   const analyzedAt      = new Date().toISOString()
+  const provider        = getProviderHint(modelConfig)
 
   if (resumeFrom && hashFileTree(resumeFrom.fileTree) !== analysisVersion) {
     throw new Error('Saved progress is outdated because the repository file tree changed. Start a new analysis.')
@@ -49,38 +129,33 @@ export async function runAnalysisPipeline(input: PipelineInput): Promise<RepoGra
     repoUrl,
     repoName,
     fileTree,
-    lastStep: 0,
+    lastStep:  0,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   }
 
-  let pass1: Pass1Output
+  let pass1:        Pass1Output
   let fileContents: { path: string; content: string }[]
-  let pass2Nodes: any
-  let pass2Edges: any
-  let pass3: any
+  let pass2Nodes:   any
+  let pass2Edges:   any
+  let pass3:        any
 
-  // --- Pass 1: Structure ---
+  // --- Pass 1: Structure (auto-chunks if file tree is too large) ---
 
   if (progress.lastStep >= 1 && progress.pass1) {
     console.log('[Pipeline] Resuming from Pass 1…')
     pass1 = progress.pass1
   } else {
     console.log('[Pipeline] Pass 1: Structure analysis…')
-    const pass1Prompt = buildPass1Prompt(repoName, formatFileTree(fileTree))
     try {
-      pass1 = await callModelWithSchema(
-  pass1Prompt,
-  Pass1OutputSchema,
-  { modelConfig, pass: '1' }
-)
+      pass1 = await runPass1(repoName, fileTree, { modelConfig })
     } catch (error) {
       if (error instanceof RateLimitExceededError) {
         throw new RateLimitExceededError(error.message, { ...progress, lastStep: 0 })
       }
       throw error
     }
-    progress.pass1 = pass1
+    progress.pass1    = pass1
     progress.lastStep = 1
   }
 
@@ -98,21 +173,21 @@ export async function runAnalysisPipeline(input: PipelineInput): Promise<RepoGra
     )
     progress.fileContents = fileContents
   }
-  const sampledContents = formatSampledFiles(fileContents, pass1.estimatedSize)
 
-  // --- Pass 2a: Nodes ---
+  // --- Pass 2a: Nodes (chunked for Groq) ---
   if (progress.pass2Nodes) {
     console.log('[Pipeline] Resuming from Pass 2a…')
     pass2Nodes = progress.pass2Nodes
   } else {
-    console.log('[Pipeline] Pass 2a: Node mapping…')
-    const pass2NodesPrompt = buildPass2NodesPrompt(repoName, pass1.tentativeModules, sampledContents)
     try {
-      pass2Nodes = await callModelWithSchema(
-  pass2NodesPrompt,
-  Pass2NodesSchema,
-  { modelConfig, pass: '2' }
-)
+      pass2Nodes = await runPass2Nodes(
+        repoName,
+        pass1.tentativeModules,
+        fileContents,
+        pass1.estimatedSize,
+        provider,
+        { modelConfig }
+      )
     } catch (error) {
       if (error instanceof RateLimitExceededError) {
         throw new RateLimitExceededError(error.message, { ...progress, lastStep: 1 })
@@ -120,25 +195,24 @@ export async function runAnalysisPipeline(input: PipelineInput): Promise<RepoGra
       throw error
     }
     progress.pass2Nodes = pass2Nodes
-    progress.lastStep = 2
+    progress.lastStep   = 2
   }
 
-  // --- Pass 2b: Edges ---
+  // --- Pass 2b: Edges (chunked for Groq) ---
   if (progress.pass2Edges) {
     console.log('[Pipeline] Resuming from Pass 2b…')
     pass2Edges = progress.pass2Edges
   } else {
-    if (!pass2Nodes) {
-      throw new Error('pass2Nodes is required for Pass 2b but not available')
-    }
-    console.log('[Pipeline] Pass 2b: Edge mapping…')
-    const pass2EdgesPrompt = buildPass2EdgesPrompt(repoName, pass2Nodes.nodes, sampledContents)
+    if (!pass2Nodes) throw new Error('pass2Nodes is required for Pass 2b but not available')
     try {
-      pass2Edges = await callModelWithSchema(
-  pass2EdgesPrompt,
-  Pass2EdgesSchema,
-  { modelConfig, pass: '2' }
-)
+      pass2Edges = await runPass2Edges(
+        repoName,
+        pass2Nodes.nodes,
+        fileContents,
+        pass1.estimatedSize,
+        provider,
+        { modelConfig }
+      )
     } catch (error) {
       if (error instanceof RateLimitExceededError) {
         throw new RateLimitExceededError(error.message, { ...progress, lastStep: 2 })
@@ -146,7 +220,7 @@ export async function runAnalysisPipeline(input: PipelineInput): Promise<RepoGra
       throw error
     }
     progress.pass2Edges = pass2Edges
-    progress.lastStep = 2
+    progress.lastStep   = 2
   }
 
   const pass2: Pass2Output = {
@@ -159,25 +233,18 @@ export async function runAnalysisPipeline(input: PipelineInput): Promise<RepoGra
     console.log('[Pipeline] Resuming from Pass 3…')
     pass3 = progress.pass3
   } else {
-    if (!pass2Nodes || !pass2Edges) {
-      throw new Error('pass2 is required for Pass 3 but not available')
-    }
+    if (!pass2Nodes || !pass2Edges) throw new Error('pass2 is required for Pass 3 but not available')
     console.log('[Pipeline] Pass 3: Semantic enrichment…')
     const pass3Prompt = buildPass3Prompt(repoName, pass2)
     try {
-      pass3 = await callModelWithSchema(
-  pass3Prompt,
-  Pass3OutputSchema,
-  { modelConfig, pass: '3' }
-)
+      pass3 = await callModelWithSchema(pass3Prompt, Pass3OutputSchema, { modelConfig, pass: '3' })
     } catch (error) {
       if (error instanceof RateLimitExceededError) {
         throw new RateLimitExceededError(error.message, { ...progress, lastStep: 2 })
       }
       throw error
     }
-    progress.pass3 = pass3
-
+    progress.pass3    = pass3
     progress.lastStep = 3
   }
 
@@ -220,7 +287,7 @@ export async function runAnalysisPipeline(input: PipelineInput): Promise<RepoGra
     edges:      pass2.edges.length,
     pattern:    meta.detectedPattern,
     confidence: meta.patternConfidence,
-    provider:   modelConfig?.provider ?? 'env-default',
+    provider,
   })
 
   return graph
