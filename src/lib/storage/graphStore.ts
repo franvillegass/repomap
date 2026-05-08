@@ -18,6 +18,8 @@ export interface PipelineProgress {
   lastStep: number // 0: none, 1: pass1 done, 2: pass2 done, 3: pass3 done
   createdAt: string
   updatedAt: string
+  pass2NodesPartial?: any[]
+  pass2NodesChunk?: number
 }
 
 async function getDB() {

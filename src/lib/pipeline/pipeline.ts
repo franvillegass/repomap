@@ -52,29 +52,41 @@ async function runPass2Nodes(
   fileContents: { path: string; content: string }[],
   estimatedSize: Pass1Output['estimatedSize'],
   provider:     ProviderHint,
-  options:      { modelConfig?: ModelConfig }
+  options:      { modelConfig?: ModelConfig; partialNodes?: any[]; startAtChunk?: number }
 ) {
-  const chunks = chunkSampledFiles(fileContents, estimatedSize, provider)
-  console.log(`[Pipeline] Pass 2a: ${chunks.length} chunk(s) for nodes`)
+  const chunks   = chunkSampledFiles(fileContents, estimatedSize, provider)
+  const allNodes: any[] = [...(options.partialNodes ?? [])]
+  const startAt  = options.startAtChunk ?? 0
 
-  const allNodes: any[] = []
+  console.log(`[Pipeline] Pass 2a: ${chunks.length} chunk(s), starting from chunk ${startAt + 1}`)
 
-  for (let i = 0; i < chunks.length; i++) {
-    if (chunks.length > 1) console.log(`[Pipeline] Pass 2a chunk ${i + 1}/${chunks.length}`)
+  for (let i = startAt; i < chunks.length; i++) {
+    console.log(`[Pipeline] Pass 2a chunk ${i+1}/${chunks.length} — ${chunks[i].length} chars (~${Math.round(chunks[i].length/4)} tokens)`)
     const prompt = buildPass2NodesPrompt(repoName, tentativeModules, chunks[i])
-    const result = await callModelWithSchema(prompt, Pass2NodesSchema, { modelConfig: options.modelConfig, pass: '2a' })
-    allNodes.push(...result.nodes)
+    
+    try {
+      const result = await callModelWithSchema(prompt, Pass2NodesSchema, { modelConfig: options.modelConfig, pass: '2a' })
+      allNodes.push(...result.nodes)
+    } catch (error) {
+      if (error instanceof RateLimitExceededError) {
+        // Propagar con nodos acumulados hasta este chunk
+        throw new RateLimitExceededError(error.message, {
+          pass2NodesPartial: allNodes,
+          pass2NodesChunk:   i,  // este chunk falló, retomar desde acá
+        })
+      }
+      throw error
+    }
   }
 
-  // Deduplicate by id — later chunks may re-detect the same modules
   const seen = new Set<string>()
-  const dedupedNodes = allNodes.filter(n => {
-    if (seen.has(n.id)) return false
-    seen.add(n.id)
-    return true
-  })
-
-  return { nodes: dedupedNodes }
+  return {
+    nodes: allNodes.filter(n => {
+      if (seen.has(n.id)) return false
+      seen.add(n.id)
+      return true
+    })
+  }
 }
 
 /**
@@ -97,6 +109,7 @@ async function runPass2Edges(
   for (let i = 0; i < chunks.length; i++) {
     if (chunks.length > 1) console.log(`[Pipeline] Pass 2b chunk ${i + 1}/${chunks.length}`)
     const prompt = buildPass2EdgesPrompt(repoName, nodes, chunks[i])
+    console.log(`[Pass2b chunk ${i+1}] prompt length: ${prompt.length} chars (~${Math.round(prompt.length/4)} tokens)`)
     const result = await callModelWithSchema(prompt, Pass2EdgesSchema, { modelConfig: options.modelConfig, pass: '2b' })
     allEdges.push(...result.edges)
   }
@@ -174,29 +187,41 @@ export async function runAnalysisPipeline(input: PipelineInput): Promise<RepoGra
     progress.fileContents = fileContents
   }
 
-  // --- Pass 2a: Nodes (chunked for Groq) ---
   if (progress.pass2Nodes) {
-    console.log('[Pipeline] Resuming from Pass 2a…')
-    pass2Nodes = progress.pass2Nodes
-  } else {
-    try {
-      pass2Nodes = await runPass2Nodes(
-        repoName,
-        pass1.tentativeModules,
-        fileContents,
-        pass1.estimatedSize,
-        provider,
-        { modelConfig }
-      )
-    } catch (error) {
-      if (error instanceof RateLimitExceededError) {
-        throw new RateLimitExceededError(error.message, { ...progress, lastStep: 1 })
+  console.log('[Pipeline] Resuming from Pass 2a…')
+  pass2Nodes = progress.pass2Nodes
+} else {
+  try {
+    pass2Nodes = await runPass2Nodes(
+      repoName,
+      pass1.tentativeModules,
+      fileContents,
+      pass1.estimatedSize,
+      provider,
+      {
+        modelConfig,
+        partialNodes: progress.pass2NodesPartial,
+        startAtChunk: progress.pass2NodesChunk ?? 0,
       }
-      throw error
+    )
+  } catch (error) {
+    if (error instanceof RateLimitExceededError) {
+      // Guardar nodos parciales completados antes del fallo
+      const partial = (error as RateLimitExceededError).progress
+      throw new RateLimitExceededError(error.message, {
+        ...progress,
+        lastStep: 1,
+        pass2NodesPartial: partial?.pass2NodesPartial ?? progress.pass2NodesPartial,
+        pass2NodesChunk:   partial?.pass2NodesChunk   ?? progress.pass2NodesChunk,
+      })
     }
-    progress.pass2Nodes = pass2Nodes
-    progress.lastStep   = 2
+    throw error
   }
+  progress.pass2Nodes = pass2Nodes
+  progress.pass2NodesPartial = undefined  // limpiar parciales al completar
+  progress.pass2NodesChunk   = undefined
+  progress.lastStep = 2
+}
 
   // --- Pass 2b: Edges (chunked for Groq) ---
   if (progress.pass2Edges) {
