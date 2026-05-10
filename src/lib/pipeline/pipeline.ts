@@ -94,36 +94,48 @@ async function runPass2Nodes(
  * Merges edge arrays from all chunks, deduplicating by id.
  */
 async function runPass2Edges(
-  repoName:     string,
-  nodes:        any[],
-  fileContents: { path: string; content: string }[],
+  repoName:      string,
+  nodes:         any[],
+  fileContents:  { path: string; content: string }[],
   estimatedSize: Pass1Output['estimatedSize'],
-  provider:     ProviderHint,
-  options:      { modelConfig?: ModelConfig }
+  provider:      ProviderHint,
+  options:       { modelConfig?: ModelConfig; partialEdges?: any[]; startAtChunk?: number }
 ) {
-  const chunks = chunkSampledFiles(fileContents, estimatedSize, provider)
-  console.log(`[Pipeline] Pass 2b: ${chunks.length} chunk(s) for edges`)
+  const chunks   = chunkSampledFiles(fileContents, estimatedSize, provider)
+  const allEdges: any[] = [...(options.partialEdges ?? [])]
+  const startAt  = options.startAtChunk ?? 0
 
-  const allEdges: any[] = []
+  console.log(`[Pipeline] Pass 2b: ${chunks.length} chunk(s), starting from chunk ${startAt + 1}`)
 
-  for (let i = 0; i < chunks.length; i++) {
-    if (chunks.length > 1) console.log(`[Pipeline] Pass 2b chunk ${i + 1}/${chunks.length}`)
+  for (let i = startAt; i < chunks.length; i++) {
+    if (chunks.length > 1) console.log(`[Pipeline] Pass 2b chunk ${i+1}/${chunks.length}`)
     const prompt = buildPass2EdgesPrompt(repoName, nodes, chunks[i])
     console.log(`[Pass2b chunk ${i+1}] prompt length: ${prompt.length} chars (~${Math.round(prompt.length/4)} tokens)`)
-    const result = await callModelWithSchema(prompt, Pass2EdgesSchema, { modelConfig: options.modelConfig, pass: '2b' })
-    allEdges.push(...result.edges)
+
+    try {
+      const result = await callModelWithSchema(prompt, Pass2EdgesSchema, { modelConfig: options.modelConfig, pass: '2b' })
+      allEdges.push(...result.edges)
+    } catch (error) {
+      if (error instanceof RateLimitExceededError) {
+        throw new RateLimitExceededError(error.message, {
+          pass2EdgesPartial: allEdges,
+          pass2EdgesChunk:   i,
+        })
+      }
+      throw error
+    }
   }
 
-  // Deduplicate edges by id
   const seen = new Set<string>()
-  const dedupedEdges = allEdges.filter(e => {
-    if (seen.has(e.id)) return false
-    seen.add(e.id)
-    return true
-  })
-
-  return { edges: dedupedEdges }
+  return {
+    edges: allEdges.filter(e => {
+      if (seen.has(e.id)) return false
+      seen.add(e.id)
+      return true
+    })
+  }
 }
+
 
 // ------------------------------------------------------------
 // Main pipeline
@@ -224,29 +236,41 @@ export async function runAnalysisPipeline(input: PipelineInput): Promise<RepoGra
 }
 
   // --- Pass 2b: Edges (chunked for Groq) ---
-  if (progress.pass2Edges) {
-    console.log('[Pipeline] Resuming from Pass 2b…')
-    pass2Edges = progress.pass2Edges
-  } else {
-    if (!pass2Nodes) throw new Error('pass2Nodes is required for Pass 2b but not available')
-    try {
-      pass2Edges = await runPass2Edges(
-        repoName,
-        pass2Nodes.nodes,
-        fileContents,
-        pass1.estimatedSize,
-        provider,
-        { modelConfig }
-      )
-    } catch (error) {
-      if (error instanceof RateLimitExceededError) {
-        throw new RateLimitExceededError(error.message, { ...progress, lastStep: 2 })
+if (progress.pass2Edges) {
+  console.log('[Pipeline] Resuming from Pass 2b…')
+  pass2Edges = progress.pass2Edges
+} else {
+  if (!pass2Nodes) throw new Error('pass2Nodes is required for Pass 2b but not available')
+  try {
+    pass2Edges = await runPass2Edges(
+      repoName,
+      pass2Nodes.nodes,
+      fileContents,
+      pass1.estimatedSize,
+      provider,
+      {
+        modelConfig,
+        partialEdges: progress.pass2EdgesPartial,
+        startAtChunk: progress.pass2EdgesChunk ?? 0,
       }
-      throw error
+    )
+  } catch (error) {
+    if (error instanceof RateLimitExceededError) {
+      const partial = (error as RateLimitExceededError).progress
+      throw new RateLimitExceededError(error.message, {
+        ...progress,
+        lastStep: 2,
+        pass2EdgesPartial: partial?.pass2EdgesPartial ?? progress.pass2EdgesPartial,
+        pass2EdgesChunk:   partial?.pass2EdgesChunk   ?? progress.pass2EdgesChunk,
+      })
     }
-    progress.pass2Edges = pass2Edges
-    progress.lastStep   = 2
+    throw error
   }
+  progress.pass2Edges        = pass2Edges
+  progress.pass2EdgesPartial = undefined
+  progress.pass2EdgesChunk   = undefined
+  progress.lastStep          = 2
+}
 
   const pass2: Pass2Output = {
     nodes: pass2Nodes.nodes,

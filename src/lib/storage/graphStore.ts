@@ -20,6 +20,8 @@ export interface PipelineProgress {
   updatedAt: string
   pass2NodesPartial?: any[]
   pass2NodesChunk?: number
+  pass2EdgesPartial?: any[]
+  pass2EdgesChunk?: number
 }
 
 async function getDB() {
