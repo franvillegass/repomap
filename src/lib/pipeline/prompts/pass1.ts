@@ -9,50 +9,36 @@ import type { ModelConfig }    from '@/lib/modelConfig'
 // ─────────────────────────────────────────────────────────────
 
 export function buildPass1Prompt(repoName: string, fileTree: string): string {
-  return `You are analyzing the file tree of a software repository to identify its architectural structure.
+  return `Analyze a repository's file tree to identify architecture.
 
-REPOSITORY: ${repoName}
+REPO: ${repoName}
+
 FILE TREE:
 ${fileTree}
 
-Your tasks:
+Tasks:
+1. Identify architecturally relevant files (exclude: tests, build, lockfiles, assets, generated, *.min.*, dist/, __pycache__, *.pyc, .eslintrc, .prettierrc, etc)
+2. Group relevant files into logical modules (each with single responsibility)
+3. List all programming languages detected
+4. Estimate repo size: "small" (<20 files), "medium" (20-80), "large" (>80 relevant files)
 
-1. Identify which files are architecturally relevant. Exclude: tests, build artifacts, generated files, lockfiles, assets, and configuration files that don't reveal architecture (e.g. .eslintrc, .prettierrc, package-lock.json, *.min.js, dist/, .next/, __pycache__, *.pyc).
-
-2. Group relevant files into logical modules. A module is a cohesive set of files with a single architectural responsibility.
-
-3. List all programming languages detected.
-
-4. Estimate repository size based on relevant file count:
-   - small: under 20 relevant files
-   - medium: 20–80 relevant files
-   - large: over 80 relevant files
-
-Respond with ONLY a JSON object with this EXACT structure — no other fields, no renaming:
-
+Return JSON with these exact fields:
 {
-  "relevantFiles": ["path/to/file.py", "path/to/other.py"],
-  "ignoredReasons": {
-    "path/to/ignored.pyc": "Python bytecode",
-    "path/to/lockfile": "lockfile"
-  },
+  "relevantFiles": ["path/file.py"],
+  "ignoredReasons": {"path/ignored.pyc": "Python bytecode"},
   "tentativeModules": [
     {
-      "id": "module__authentication",
-      "label": "Authentication",
-      "filePaths": ["path/to/auth.py"],
-      "description": "Handles user login and session management"
+      "id": "module__auth",
+      "label": "Auth",
+      "filePaths": ["path/auth.py"],
+      "description": "User login and session management"
     }
   ],
   "detectedLanguages": ["Python"],
-  "estimatedSize": "small"
+  "estimatedSize": "medium"
 }
 
-IMPORTANT:
-- Use exactly these field names: relevantFiles, ignoredReasons, tentativeModules, detectedLanguages, estimatedSize
-- tentativeModules items must have: id (starting with "module__"), label, filePaths, description
-- ignoredReasons must be an object (key = file path, value = reason string), NOT an array
-- estimatedSize must be exactly "small", "medium", or "large"`
+IMPORTANT: Module IDs must start with "module__". ignoredReasons is an object, not array.`
 }
 
 // Chunk variant — usado cuando el file tree es demasiado grande

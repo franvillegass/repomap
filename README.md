@@ -106,7 +106,7 @@ interface RepoGraph {
     detectedPattern: string
     estimatedSize: 'small' | 'medium' | 'large'
   }
-  nodes: GraphNode[]
+  nodes: GraphNode[] luego 
   edges: GraphEdge[]
   overlay: {
     nodeEdits: Record<string, NodeEdit>

@@ -29,29 +29,20 @@ export function buildPass3Prompt(repoName: string, pass2Output: Pass2Output): st
 
   const graphJson = JSON.stringify({ nodes: lightNodes, edges: lightEdges }, null, 2)
 
-  return `You are performing semantic analysis of a software architecture graph.
+  return `Semantic analysis of architecture graph.
 
-REPOSITORY: ${repoName}
+REPO: ${repoName}
 
 GRAPH:
 ${graphJson}
 
-Your tasks:
+Tasks:
+1. For each node: assign detectedRole (e.g. "authentication", "data_access", "api_gateway") and patterns (design patterns in snake_case, or [])
+2. Detect architectural pattern: clean_architecture|hexagonal|mvc|microservices|layered_monolith|feature_modules|pipeline_etl|unknown
+3. Select layout: concentric_rings|horizontal_three_column|cluster|vertical_layers|grid_clusters|left_right_flow|force_directed
+4. Assign patternConfidence (0.0-1.0)
 
-1. For each node, determine:
-   - detectedRole: concise architectural responsibility e.g. "authentication", "data_access", "api_gateway", "domain_model"
-   - patterns: design patterns in snake_case e.g. ["repository_pattern"]. Empty array if none detected.
-
-2. Detect the top-level architectural pattern:
-   - "clean_architecture", "hexagonal", "mvc", "microservices", "layered_monolith", "feature_modules", "pipeline_etl", "unknown"
-
-3. Select layout template matching the pattern:
-${Object.entries(PATTERN_TO_LAYOUT).map(([k, v]) => `   - ${k} → "${v}"`).join('\n')}
-
-4. Assign patternConfidence (0.0 to 1.0).
-
-Respond with ONLY this exact JSON structure:
-
+Return JSON:
 {
   "meta": {
     "detectedPattern": "mvc",
@@ -59,14 +50,14 @@ Respond with ONLY this exact JSON structure:
     "patternConfidence": 0.85
   },
   "nodeEnrichments": {
-    "module__user_interface": {
+    "module__id": {
       "detectedRole": "presentation",
       "patterns": []
     }
   }
 }
 
-Include one entry in nodeEnrichments for EVERY node id in the graph.`
+CRITICAL: Include nodeEnrichments entry for EVERY node.`
 }
 
 export { PATTERN_TO_LAYOUT }
