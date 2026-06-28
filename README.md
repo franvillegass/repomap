@@ -168,7 +168,7 @@ Choose between two providers:
 - Requires Anthropic API subscription
 - Better analysis quality
 - Higher accuracy for complex architectures
-- Uses `claude-sonnet-4-20250514` by default
+- Uses `claude-3-5-haiku-latest` by default
 
 **Option 2: Groq Llama (Free)**
 - Requires free Groq API key from [console.groq.com](https://console.groq.com)
@@ -179,7 +179,7 @@ Choose between two providers:
 Switch providers in the UI or via environment variables:
 ```bash
 AI_PROVIDER=groq          # or 'anthropic'
-AI_MODEL=llama-3.3-70b    # or 'claude-sonnet-4-20250514'
+AI_MODEL=llama-3.3-70b    # or 'claude-3-5-haiku-latest'
 GROQ_API_KEY=gsk_...      # Groq key
 ANTHROPIC_API_KEY=sk-...  # Anthropic key
 ```

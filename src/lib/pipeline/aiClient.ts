@@ -14,12 +14,12 @@ export function getModelFromConfig(config?: ModelConfig, pass?: string) {
   }
 
   if (config?.provider === 'anthropic') {
-    return createAnthropic()('claude-sonnet-4-5')
+    return createAnthropic()('claude-haiku-4-5-20251001')
   }
 
   // Fallback: env vars
   const provider = process.env.AI_PROVIDER ?? 'anthropic'
-  const modelId  = process.env.AI_MODEL    ?? 'claude-sonnet-4-5'
+  const modelId  = process.env.AI_MODEL    ?? 'claude-haiku-4-5-20251001'
   return provider === 'groq' ? createGroq()(modelId) : createAnthropic()(modelId)
 }
 

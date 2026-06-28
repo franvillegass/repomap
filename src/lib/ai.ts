@@ -8,10 +8,10 @@ export function getModel(config?: ModelConfig) {
     return createGroq({ apiKey: config.groqApiKey })('llama-3.3-70b-versatile')
   }
   if (config?.provider === 'anthropic') {
-    return createAnthropic()('claude-sonnet-4-5')
+    return createAnthropic()('claude-3-5-haiku-latest')
   }
   const provider = process.env.AI_PROVIDER ?? 'anthropic'
-  const modelId  = process.env.AI_MODEL    ?? 'claude-sonnet-4-5'
+  const modelId  = process.env.AI_MODEL    ?? 'claude-3-5-haiku-latest'
   return provider === 'groq' ? createGroq()(modelId) : createAnthropic()(modelId)
 }
 

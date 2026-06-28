@@ -41,12 +41,12 @@ export function buildPass2EdgesPrompt(
   sampledFileContents: string,
 ): string {
   const nodesJson = JSON.stringify(
-    nodes.map(n => ({ id: n.id, label: n.label, type: n.type, files: n.files })),
+    nodes.map(n => ({ id: n.id, label: n.label, type: n.type })),
     null,
     2,
   )
 
-  return `Map dependencies between nodes. Analyze imports, calls, and architecture patterns.
+  return `Map edges between nodes by analyzing imports and calls in source code.
 
 REPO: ${repoName}
 
@@ -56,26 +56,12 @@ ${nodesJson}
 SOURCE:
 ${sampledFileContents}
 
-Edge types:
-- "engineering": direct import/call (runtime dependency only)
-- "architecture": structural relationship (no direct call) - containment, layer boundary, ownership
-- "both": crosses architectural boundary (UI→service, service→adapter, etc)
+Classify edges:
+- "engineering": direct import/call
+- "architecture": structural (no direct call)
+- "both": crosses design boundary (UI→backend, service→adapter)
 
-Rules:
-- "engineering" for same-layer helpers
-- "both" for UI/presentation→backend, service→integration, service→config
-- "architecture" for parent-child/containment without direct calls
+Strength 1-5, Confidence: high|medium|uncertain
 
-Confidence: "high" for explicit imports, "medium" for path/name evidence, "uncertain" for inference only.
-Strength: 1-5 (1=weak, 5=critical)
-
-Fields (exact):
-- id: edge__source__target
-- source, target: node ids
-- edgeType: engineering|architecture|both
-- strength: 1-5
-- confidence: high|medium|uncertain
-- label?: verb phrase like "calls" or "implements"
-
-Return JSON with "edges" array only. No markdown.`
+Return: {"edges": [{id, source, target, edgeType, strength, confidence, label?}]}`
 }
