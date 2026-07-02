@@ -1,10 +1,9 @@
 import { analyzeRepository } from './analyzer.js'
 import { spawn } from 'child_process'
 import { fileURLToPath } from 'url'
-import { join, dirname, resolve } from 'path'
+import { join, dirname } from 'path'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const workspaceRoot = resolve(__dirname, '../../../')
 
 export async function analyze(input) {
   return analyzeRepository(input)
@@ -20,17 +19,14 @@ export async function serve(input) {
   const fs = await import('fs')
   fs.writeFileSync(tempFile, JSON.stringify(graph))
 
-  const nextPort = port || 3000
-  const child = spawn('npm', ['run', 'dev', '--', '-p', String(nextPort)], {
-    cwd: workspaceRoot,
+  const child = spawn('npx', ['@frannn2114/repomap-visual', 'serve', tempFile, `--port=${port}`], {
     stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, REPOMAP_GRAPH_FILE: tempFile },
   })
 
-  let detectedPort = nextPort
+  let detectedPort = port
   const portPromise = new Promise((resolvePort) => {
     if (!child.stdout) {
-      resolvePort(nextPort)
+      resolvePort(port)
       return
     }
     child.stdout.on('data', (data) => {
@@ -41,7 +37,7 @@ export async function serve(input) {
         resolvePort(detectedPort)
       }
     })
-    setTimeout(() => resolvePort(nextPort), 15000)
+    setTimeout(() => resolvePort(port), 15000)
   })
 
   const actualPort = await portPromise
