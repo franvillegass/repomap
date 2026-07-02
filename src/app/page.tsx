@@ -68,6 +68,7 @@ export default function Page() {
   )
   const [history, setHistory] = useState<GraphMeta[]>([])
   const [progressList, setProgressList] = useState<PipelineProgress[]>([])
+  const [checkingInitial, setCheckingInitial] = useState(true)
 
   const [manualMode, setManualMode] = useState(false)
 
@@ -115,6 +116,8 @@ export default function Page() {
         }
       } catch {
         // No initial graph, continue with normal flow
+      } finally {
+        if (!cancelled) setCheckingInitial(false)
       }
     }
     loadInitialGraph()
@@ -279,6 +282,10 @@ export default function Page() {
         />
       </div>
     )
+  }
+
+  if (checkingInitial) {
+    return <FullscreenSpinner />
   }
 
   if (status === 'success' && graph) {
