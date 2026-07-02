@@ -1,11 +1,8 @@
 import { NextResponse } from 'next/server'
 import { readFileSync } from 'fs'
-import { getConfig } from 'next/config'
-
-const { serverRuntimeConfig } = getConfig()
 
 export async function GET() {
-  const graphPath = serverRuntimeConfig?.initialGraphPath
+  const graphPath = process.env.REPOMAP_GRAPH_FILE
 
   if (!graphPath) {
     return NextResponse.json({ error: 'No initial graph configured' }, { status: 404 })

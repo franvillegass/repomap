@@ -1,45 +1,47 @@
 import { analyzeRepository } from './analyzer.js'
 import { spawn } from 'child_process'
 import { fileURLToPath } from 'url'
-import { join, dirname } from 'path'
+import { join, dirname, resolve } from 'path'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
+const workspaceRoot = resolve(__dirname, '../../../')
 
 export async function analyze(input) {
   return analyzeRepository(input)
 }
 
 export async function serve(input) {
-  const { repoUrl, localPath, githubToken, port = 0 } = input
+  const { repoUrl, localPath, githubToken, port = 3000 } = input
 
   const graph = await analyzeRepository({ repoUrl, localPath, githubToken })
-  
-  const tempFile = join('/tmp', `repomap-${Date.now()}.json`)
+
+  const tmpDir = process.env.TEMP || '/tmp'
+  const tempFile = join(tmpDir, `repomap-${Date.now()}.json`)
   const fs = await import('fs')
   fs.writeFileSync(tempFile, JSON.stringify(graph))
 
-  const args = ['@frannn2114/repomap-visual', 'serve', tempFile, '--port', String(port)]
-  const child = spawn('npx', args, {
+  const nextPort = port || 3000
+  const child = spawn('npm', ['run', 'dev', '--', '-p', String(nextPort)], {
+    cwd: workspaceRoot,
     stdio: ['ignore', 'pipe', 'pipe'],
-    detached: false,
-    env: { ...process.env, NODE_ENV: 'production' }
+    env: { ...process.env, REPOMAP_GRAPH_FILE: tempFile },
   })
 
-  let detectedPort = port
-  const portPromise = new Promise((resolve) => {
+  let detectedPort = nextPort
+  const portPromise = new Promise((resolvePort) => {
     if (!child.stdout) {
-      resolve(port || 3000)
+      resolvePort(nextPort)
       return
     }
     child.stdout.on('data', (data) => {
       const output = data.toString()
-      const match = output.match(/Server ready at http:\/\/[^:]+:(\d+)/)
+      const match = output.match(/http:\/\/localhost:(\d+)/)
       if (match) {
         detectedPort = parseInt(match[1], 10)
-        resolve(detectedPort)
+        resolvePort(detectedPort)
       }
     })
-    setTimeout(() => resolve(port || 3000), 5000)
+    setTimeout(() => resolvePort(nextPort), 15000)
   })
 
   const actualPort = await portPromise

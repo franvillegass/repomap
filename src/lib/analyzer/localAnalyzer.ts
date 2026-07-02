@@ -1,11 +1,7 @@
 import { parseGithubUrl, fetchFileTree, fetchFileContent as ghFetchFileContent } from '@/lib/github/githubClient'
 import type { RepoGraph, GraphMeta, Node, Edge, Overlay, Pass1Output } from '@/lib/pipeline/schemas/graph'
-import { glob } from 'glob'
-import { readFileSync, statSync } from 'fs'
+import { readFileSync, statSync, readdirSync } from 'fs'
 import { join, relative, resolve, extname, basename } from 'path'
-import { fileURLToPath } from 'url'
-
-const __dirname = fileURLToPath(new URL('.', import.meta.url))
 
 const LANGUAGE_EXTENSIONS: Record<string, string> = {
   '.ts': 'TypeScript', '.tsx': 'TypeScript',
@@ -95,14 +91,20 @@ function shouldIgnore(filePath: string, rootPath: string): boolean {
   })
 }
 
-async function getLocalFileTree(rootPath: string): Promise<string[]> {
-  const files = await glob('**/*', {
-    cwd: rootPath,
-    nodir: true,
-    ignore: IGNORE_PATTERNS,
-    absolute: true,
-  })
-  return files.map(f => relative(rootPath, f)).sort()
+function walkDir(dir: string, rootPath: string, results: string[] = []): string[] {
+  const entries = readdirSync(dir, { withFileTypes: true })
+  for (const entry of entries) {
+    const fullPath = join(dir, entry.name)
+    const relPath = relative(rootPath, fullPath)
+    if (IGNORE_PATTERNS.some(p => new RegExp('^' + p.replace(/\*\*/g, '.*').replace(/\*/g, '[^/]*') + '$').test(relPath))) continue
+    if (entry.isDirectory()) walkDir(fullPath, rootPath, results)
+    else results.push(fullPath)
+  }
+  return results
+}
+
+function getLocalFileTree(rootPath: string): string[] {
+  return walkDir(rootPath, rootPath).map(f => relative(rootPath, f)).sort()
 }
 
 function analyzeFileStructure(filePaths: string[], rootPath: string): Pass1Output {

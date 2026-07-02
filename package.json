@@ -2,19 +2,17 @@
   "name": "repomap",
   "version": "0.1.0",
   "private": true,
-  "workspaces": [
-    "packages/*"
-  ],
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
-    "visual:build": "npm run build --workspace=@repomap/visual",
-    "visual:pack": "npm pack --workspace=@repomap/visual"
+    "lint": "next lint"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^1.0.0",
+    "@ai-sdk/groq": "^1.0.0",
     "@xyflow/react": "^12.0.0",
+    "ai": "^4.0.0",
     "glob": "^11.0.0",
     "idb": "^8.0.3",
     "next": "14.2.5",
