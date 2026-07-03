@@ -158,25 +158,52 @@ const IGNORE_PATTERNS = [
   '**/.DS_Store',
 ]
 
+function convertGitIgnoreToGlob(content) {
+  const patterns = []
+  for (const line of content.split('\n')) {
+    const t = line.trim()
+    if (!t || t.startsWith('#') || t.startsWith('!')) continue
+    let p = t
+    if (p.endsWith('/')) p += '**'
+    if (p.startsWith('/')) p = p.slice(1)
+    else p = '**/' + p
+    patterns.push(p)
+  }
+  return patterns
+}
+
 function getLanguage(filePath) {
   const ext = extname(filePath).toLowerCase()
   return LANGUAGE_EXTENSIONS[ext] || 'Unknown'
 }
 
-function shouldIgnore(filePath, rootPath) {
+function shouldIgnore(filePath, rootPath, extraPatterns = []) {
   const relPath = relative(rootPath, filePath)
-  return IGNORE_PATTERNS.some(pattern => {
+  const allPatterns = [...IGNORE_PATTERNS, ...extraPatterns]
+  return allPatterns.some(pattern => {
     const regex = new RegExp('^' + pattern.replace(/\*\*/g, '.*').replace(/\*/g, '[^/]*') + '$')
     return regex.test(relPath) || regex.test(filePath)
   })
 }
 
+function loadGitIgnorePatterns(rootPath) {
+  const patterns = []
+  try {
+    const content = readFileSync(join(rootPath, '.gitignore'), 'utf-8')
+    patterns.push(...convertGitIgnoreToGlob(content))
+  } catch {}
+  return patterns
+}
+
 async function getLocalFileTree(rootPath) {
+  const gitIgnorePatterns = loadGitIgnorePatterns(rootPath)
+  const allIgnores = [...IGNORE_PATTERNS, ...gitIgnorePatterns]
+
   const files = await glob('**/*', {
     cwd: rootPath,
     nodir: true,
     dot: true,
-    ignore: IGNORE_PATTERNS,
+    ignore: allIgnores,
     absolute: true,
   })
   return files.map(f => relative(rootPath, f).replace(/\\/g, '/')).sort()
@@ -247,6 +274,7 @@ async function fetchGitHubFileContent(owner, repo, path, token) {
 
 function analyzeFileStructure(filePaths, rootPath) {
   const projectRoots = findProjectRoots(filePaths)
+  const gitIgnorePatterns = loadGitIgnorePatterns(rootPath)
   const relevantFiles = []
   const ignoredReasons = {}
   const languageSet = new Set()
@@ -257,7 +285,7 @@ function analyzeFileStructure(filePaths, rootPath) {
     const language = getLanguage(filePath)
     if (language !== 'Unknown') languageSet.add(language)
 
-    if (shouldIgnore(fullPath, rootPath)) {
+    if (shouldIgnore(fullPath, rootPath, gitIgnorePatterns)) {
       ignoredReasons[filePath] = 'Ignored pattern'
       continue
     }
