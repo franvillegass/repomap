@@ -487,18 +487,8 @@ function buildNodesFromModules(tentativeModules, fileContents) {
       }
       nodes.push(fileNode)
 
-      for (const def of defs.slice(0, 10)) {
-        const compNode = {
-          id: `component__${mod.id}__${def.name.replace(/[^a-zA-Z0-9]/g, '_')}`,
-          label: def.name,
-          type: 'component',
-          parentId: fileNode.id,
-          depth: 3,
-          files: [filePath],
-          metadata: { language, complexity: 'low' },
-        }
-        nodes.push(compNode)
-      }
+      /* component nodes removed — they represent code symbols (classes/functions),
+         not architectural components. Module expand already shows file contents. */
     }
   }
 
@@ -585,149 +575,8 @@ function buildEdges(nodes, fileContents) {
   return edges
 }
 
-function wordMatch(text, word) {
-  const i = text.indexOf(word)
-  if (i === -1) return false
-  const before = i === 0 || /[^a-z0-9]/.test(text[i - 1])
-  const after = i + word.length >= text.length || /[^a-z0-9]/.test(text[i + word.length])
-  return before && after
-}
-
-function detectRole(nodeId, label, files) {
-  const labelLower = label.toLowerCase()
-  const fileStr = files.join(' ').toLowerCase()
-  const combined = `${labelLower} ${fileStr}`
-
-  const kw = (word) => word.length < 5 ? wordMatch(combined, word) : combined.includes(word)
-
-  if (kw('auth') || kw('login') || kw('session') || kw('jwt') || kw('oauth')) return 'authentication'
-  if (kw('database') || kw('db') || kw('repository') || kw('orm') || kw('model') || kw('entity')) return 'data_access'
-  if (kw('api') || kw('controller') || kw('route') || kw('endpoint') || kw('handler')) return 'api_gateway'
-  if (kw('service') || kw('business') || kw('logic') || kw('use_case') || kw('usecase') || kw('sync') || kw('syncer') || kw('synchronizer') || kw('engine')) return 'business_logic'
-  if (kw('ui') || kw('view') || kw('component') || kw('page') || kw('screen') || kw('frontend')) return 'presentation'
-  if (kw('config') || kw('setting') || kw('env') || kw('constant')) return 'configuration'
-  if (kw('util') || kw('helper') || kw('common') || kw('shared')) return 'utility'
-  if (kw('test') || kw('spec') || kw('mock')) return 'testing'
-  if (kw('middleware') || kw('interceptor') || kw('filter')) return 'middleware'
-  if (kw('event') || kw('message') || kw('queue') || kw('pubsub')) return 'messaging'
-  if (kw('cache') || kw('redis') || kw('memory')) return 'caching'
-  if (kw('worker') || kw('job') || kw('task') || kw('cron') || kw('scheduler')) return 'background_jobs'
-  if (kw('security') || kw('encrypt') || kw('hash') || kw('crypto')) return 'security'
-  if (kw('log') || kw('monitor') || kw('metric') || kw('trace')) return 'observability'
-  if (kw('migration') || kw('seed') || kw('schema')) return 'database_migration'
-  
-  return 'unknown'
-}
-
-function detectPatterns(nodeId, label, files, fileContents) {
-  const patterns = []
-  const labelLower = label.toLowerCase()
-  const fileStr = files.join(' ').toLowerCase()
-  const combined = `${labelLower} ${fileStr}`
-
-  for (const file of files) {
-    const content = fileContents.get(file) || ''
-    const contentLower = content.toLowerCase()
-    
-    if (contentLower.includes('repository') && (contentLower.includes('interface') || contentLower.includes('implement'))) {
-      if (!patterns.includes('repository_pattern')) patterns.push('repository_pattern')
-    }
-    if (contentLower.includes('factory') && (contentLower.includes('create') || contentLower.includes('build'))) {
-      if (!patterns.includes('factory_pattern')) patterns.push('factory_pattern')
-    }
-    if (contentLower.includes('singleton') || (contentLower.includes('instance') && contentLower.includes('getinstance'))) {
-      if (!patterns.includes('singleton_pattern')) patterns.push('singleton_pattern')
-    }
-    if (contentLower.includes('observer') || contentLower.includes('subscribe') || contentLower.includes('eventemitter')) {
-      if (!patterns.includes('observer_pattern')) patterns.push('observer_pattern')
-    }
-    if (contentLower.includes('strategy') && contentLower.includes('interface')) {
-      if (!patterns.includes('strategy_pattern')) patterns.push('strategy_pattern')
-    }
-    if (contentLower.includes('decorator') || contentLower.includes('@decorator') || contentLower.includes('wrap')) {
-      if (!patterns.includes('decorator_pattern')) patterns.push('decorator_pattern')
-    }
-    if (contentLower.includes('adapter') && (contentLower.includes('implement') || contentLower.includes('interface'))) {
-      if (!patterns.includes('adapter_pattern')) patterns.push('adapter_pattern')
-    }
-    if (contentLower.includes('dependency') && contentLower.includes('inject')) {
-      if (!patterns.includes('dependency_injection')) patterns.push('dependency_injection')
-    }
-    if (contentLower.includes('command') && contentLower.includes('execute')) {
-      if (!patterns.includes('command_pattern')) patterns.push('command_pattern')
-    }
-    if (contentLower.includes('middleware') || (contentLower.includes('next') && contentLower.includes('handler'))) {
-      if (!patterns.includes('middleware_pattern')) patterns.push('middleware_pattern')
-    }
-  }
-
-  return patterns
-}
-
-function detectArchitecturalPattern(nodes, edges) {
-  const layerNodes = nodes.filter(n => n.type === 'layer')
-  const moduleNodes = nodes.filter(n => n.type === 'module')
-  
-  const layerLabels = layerNodes.map(n => n.label.toLowerCase())
-  const moduleLabels = moduleNodes.map(n => n.label.toLowerCase())
-  const moduleRoles = moduleNodes.map(n => n.detectedRole || 'unknown')
-
-  const hasCleanArch = layerLabels.some(l => l.includes('domain') || l.includes('entity') || l.includes('usecase')) &&
-                       layerLabels.some(l => l.includes('interface') || l.includes('adapter') || l.includes('presenter')) &&
-                       layerLabels.some(l => l.includes('framework') || l.includes('infrastructure') || l.includes('external'))
-  
-  const hasHexagonal = layerLabels.some(l => l.includes('port') || l.includes('adapter')) &&
-                       layerLabels.some(l => l.includes('domain') || l.includes('core'))
-  
-  const hasMVC = moduleLabels.some(m => m.includes('model')) &&
-                 moduleLabels.some(m => m.includes('view') || m.includes('ui') || m.includes('presenter')) &&
-                 moduleLabels.some(m => m.includes('controller') || m.includes('handler'))
-
-  const hasPresentationLayer = layerLabels.some(l => l.includes('presentation') || l.includes('ui') || l.includes('api')) ||
-                               moduleLabels.some(m => m.includes('presentation') || m.includes('ui') || m.includes('api')) ||
-                               moduleRoles.some(r => r === 'presentation' || r === 'api_gateway') ||
-                               moduleNodes.some(m => m.files.some(function(f) {
-                                 const base = (f.split('/').pop() || '').toLowerCase()
-                                 return base.includes('page') || base.includes('component') || base.includes('layout') || base.includes('route')
-                               }))
-  const hasServiceLayer = layerLabels.some(l => l.includes('service') || l.includes('business') || l.includes('logic') || l.includes('sync')) ||
-                          moduleLabels.some(m => m.includes('service') || m.includes('business') || m.includes('logic') || m.includes('sync') || m.includes('core')) ||
-                          moduleRoles.some(r => r === 'business_logic') ||
-                          moduleNodes.some(m => m.files.some(function(f) {
-                            const base = (f.split('/').pop() || '').toLowerCase()
-                            return base.includes('sync') || base.includes('service') || base.includes('business') || base.includes('logic')
-                          }))
-  const hasDataLayer = layerLabels.some(l => l.includes('data') || l.includes('repository') || l.includes('database') || l.includes('db')) ||
-                       moduleLabels.some(m => m.includes('data') || m.includes('repository') || m.includes('database') || m.includes('db') || m.includes('model')) ||
-                       moduleRoles.some(r => r === 'data_access') ||
-                       moduleNodes.some(m => m.files.some(function(f) {
-                         const base = (f.split('/').pop() || '').toLowerCase()
-                         return base.includes('db') || base.includes('database') || base.includes('sql') || base.includes('repository') || base.includes('model') || base.includes('entity')
-                       }))
-  
-  const hasLayered = (layerLabels.length >= 2) && hasPresentationLayer && hasServiceLayer && hasDataLayer
-  
-  const hasFeatureModules = moduleNodes.length > 5 &&
-                            moduleNodes.every(m => m.files.length > 0) &&
-                            !hasCleanArch && !hasHexagonal && !hasMVC && !hasLayered
-  
-  const hasMicroservices = moduleNodes.length > 3 &&
-                           moduleNodes.some(m => m.label.toLowerCase().includes('service')) &&
-                           edges.filter(e => e.edgeType === 'architecture').length > edges.length * 0.3
-  
-  const hasPipeline = moduleLabels.some(m => m.includes('etl') || m.includes('pipeline') || m.includes('stream') || m.includes('process')) &&
-                      edges.some(e => e.label?.includes('flow') || e.label?.includes('pipe'))
-
-  if (hasCleanArch) return { pattern: 'clean_architecture', confidence: 0.85, layout: 'concentric_rings' }
-  if (hasHexagonal) return { pattern: 'hexagonal', confidence: 0.8, layout: 'concentric_rings' }
-  if (hasMVC) return { pattern: 'mvc', confidence: 0.8, layout: 'horizontal_three_column' }
-  if (hasLayered) return { pattern: 'layered_monolith', confidence: 0.75, layout: 'vertical_layers' }
-  if (hasMicroservices) return { pattern: 'microservices', confidence: 0.75, layout: 'cluster' }
-  if (hasFeatureModules) return { pattern: 'feature_modules', confidence: 0.7, layout: 'grid_clusters' }
-  if (hasPipeline) return { pattern: 'pipeline_etl', confidence: 0.7, layout: 'left_right_flow' }
-  
-  return { pattern: 'unknown', confidence: 0.3, layout: 'force_directed' }
-}
+/* detectRole, detectPatterns, detectArchitecturalPattern removed — 
+   these are heuristic/LLM tasks that the agent performs based on RawAnalysis */
 
 function hashFileTree(paths) {
   const sorted = [...paths].sort().join('|')
@@ -796,38 +645,47 @@ export async function analyzeRepository(input) {
   const nodes = buildNodesFromModules(pass1.tentativeModules, fileContents)
   const edges = buildEdges(nodes, fileContents)
 
-  const nodesWithRoles = nodes.map(node => ({
-    ...node,
-    detectedRole: detectRole(node.id, node.label, node.files),
-    patterns: detectPatterns(node.id, node.label, node.files, fileContents),
-  }))
-
-  const { pattern, confidence, layout } = detectArchitecturalPattern(nodesWithRoles, edges)
-
-  const meta = {
-    repoUrl: repoUrl || `local://${repoName}`,
-    repoName,
-    analysisVersion,
-    analyzedAt,
-    detectedPattern: pattern,
-    layoutTemplate: layout,
-    patternConfidence: confidence,
+  // Build file-level data so the agent can reason about roles/patterns without reading source code
+  const fileData = {}
+  for (const filePath of pass1.relevantFiles) {
+    const content = fileContents.get(filePath) || ''
+    const language = getLanguage(filePath)
+    fileData[filePath] = {
+      language,
+      lineCount: content.split('\n').length,
+      imports: extractImports(content, language),
+      definitions: extractDefinitions(content, language),
+    }
   }
 
-  const overlay = {
-    version: 0,
-    nodeOverrides: {},
-    edgeOverrides: {},
-    manualNodes: [],
-    manualEdges: [],
+  const raw = {
+    meta: {
+      repoUrl: repoUrl || `local://${repoName}`,
+      repoName,
+      analysisVersion,
+      analyzedAt,
+      estimatedSize: pass1.estimatedSize,
+      languages: pass1.detectedLanguages,
+      totalFiles: pass1.relevantFiles.length,
+      totalModules: pass1.tentativeModules.length,
+    },
+    modules: pass1.tentativeModules.map(mod => ({
+      id: mod.id,
+      label: mod.label,
+      layerId: mod.layerId,
+      layerLabel: mod.layerLabel,
+      fileCount: mod.filePaths.length,
+      filePaths: mod.filePaths,
+    })),
+    fileData,
+    nodes,
+    edges,
   }
-
-  const graph = { meta, nodes: nodesWithRoles, edges, overlay }
 
   if (outputFile) {
-    writeFileSync(outputFile, JSON.stringify(graph, null, 2))
-    console.log(`[analyzer] Graph written to ${outputFile}`)
+    writeFileSync(outputFile, JSON.stringify(raw, null, 2))
+    console.log(`[analyzer] Raw analysis written to ${outputFile}`)
   }
 
-  return graph
+  return raw
 }

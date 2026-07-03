@@ -5,14 +5,39 @@ import { join, dirname } from 'path'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
+/**
+ * Converts a RawAnalysis into a minimal RepoGraph consumable by the visualizer.
+ * Node roles/patterns/layout are left as defaults; the caller should enrich via LLM.
+ */
+function rawToMinimalGraph(raw) {
+  const nodes = raw.nodes.map(n => ({
+    ...n,
+    detectedRole: 'unknown',
+    patterns: [],
+  }))
+  return {
+    meta: {
+      ...raw.meta,
+      detectedPattern: 'unknown',
+      layoutTemplate: 'force_directed',
+      patternConfidence: 0.3,
+    },
+    nodes,
+    edges: raw.edges,
+    overlay: { version: 0, nodeOverrides: {}, edgeOverrides: {}, manualNodes: [], manualEdges: [] },
+  }
+}
+
 export async function analyze(input) {
-  return analyzeRepository(input)
+  const raw = await analyzeRepository(input)
+  return raw
 }
 
 export async function serve(input) {
   const { repoUrl, localPath, githubToken, port = 3000 } = input
 
-  const graph = await analyzeRepository({ repoUrl, localPath, githubToken })
+  const raw = await analyzeRepository({ repoUrl, localPath, githubToken })
+  const graph = rawToMinimalGraph(raw)
 
   const tmpDir = process.env.TEMP || '/tmp'
   const tempFile = join(tmpDir, `repomap-${Date.now()}.json`)
