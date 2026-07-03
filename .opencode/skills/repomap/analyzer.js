@@ -1,6 +1,6 @@
 import { glob } from 'glob'
 import { readFileSync, statSync, writeFileSync } from 'fs'
-import { join, relative, resolve, extname, basename } from 'path'
+import { join, relative, resolve, extname, basename, dirname } from 'path'
 import { fileURLToPath } from 'url'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
@@ -42,6 +42,84 @@ const LANGUAGE_EXTENSIONS = {
   '.tf': 'Terraform',
   '.proto': 'Protobuf',
   '.graphql': 'GraphQL', '.gql': 'GraphQL',
+}
+
+const PROJECT_MARKERS = [
+  'package.json', 'requirements.txt', 'pyproject.toml',
+  'setup.py', 'go.mod', 'Cargo.toml', 'Gemfile', 'composer.json',
+  'pom.xml', 'build.gradle', 'build.sbt',
+]
+
+
+const ENTRY_POINTS = new Set(['main.py', 'app.py', 'manage.py', 'index.js', 'index.ts', 'app.js', 'app.ts', 'main.js', 'main.ts'])
+const MAX_ENTRY_DEPTH = 2
+
+function findProjectRoots(filePaths) {
+  const dirSet = new Set()
+  dirSet.add('')
+
+  for (const fp of filePaths) {
+    const base = basename(fp)
+    const dir = dirname(fp).replace(/\\/g, '/')
+    const cleanDir = dir === '.' ? '' : dir
+
+    if (PROJECT_MARKERS.includes(base)) {
+      dirSet.add(cleanDir)
+    } else if (ENTRY_POINTS.has(base)) {
+      const depth = cleanDir ? cleanDir.split('/').length : 0
+      if (depth <= MAX_ENTRY_DEPTH) dirSet.add(cleanDir)
+    }
+  }
+
+  const hasDeeperFiles = new Map()
+  for (const fp of filePaths) {
+    const depth = fp.split('/').length - 1
+    for (const r of dirSet) {
+      if (r !== '' && fp.startsWith(r + '/')) {
+        const rd = r.split('/').length
+        if (depth >= rd + 2) hasDeeperFiles.set(r, true)
+      }
+    }
+  }
+
+  return Array.from(dirSet).filter(r => r === '' || hasDeeperFiles.has(r)).sort((a, b) => {
+    const da = a === '' ? 0 : a.split('/').length
+    const db = b === '' ? 0 : b.split('/').length
+    return db - da
+  })
+}
+
+function assignLayerModule(filePath, projectRoots) {
+  const parts = filePath.split('/')
+  parts.pop()
+  let root = ''
+  for (const r of projectRoots) {
+    if (r === '' || filePath.startsWith(r + '/') || filePath === r) {
+      root = r
+      break
+    }
+  }
+  const rootDepth = root === '' ? 0 : root.split('/').length
+  const rel = rootDepth === 0 ? parts : parts.slice(rootDepth)
+
+  if (rel.length === 0) {
+    return { layerLabel: 'Root', layerId: 'layer__root', moduleLabel: 'Root', moduleId: 'module__root' }
+  }
+  if (rel.length === 1) {
+    const n = rel[0]
+    const label = n.charAt(0).toUpperCase() + n.slice(1)
+    return { layerLabel: 'Root', layerId: 'layer__root', moduleLabel: label, moduleId: `module__${n.replace(/[^a-zA-Z0-9]/g, '_')}` }
+  }
+  const layer = rel[0]
+  const mod = rel[1]
+  const layerLabel = layer.charAt(0).toUpperCase() + layer.slice(1)
+  const modLabel = mod.charAt(0).toUpperCase() + mod.slice(1)
+  return {
+    layerLabel,
+    layerId: `layer__${layer.replace(/[^a-zA-Z0-9]/g, '_')}`,
+    moduleLabel: modLabel,
+    moduleId: `module__${layer}_${mod.replace(/[^a-zA-Z0-9]/g, '_')}`,
+  }
 }
 
 const IGNORE_PATTERNS = [
@@ -97,10 +175,11 @@ async function getLocalFileTree(rootPath) {
   const files = await glob('**/*', {
     cwd: rootPath,
     nodir: true,
+    dot: true,
     ignore: IGNORE_PATTERNS,
     absolute: true,
   })
-  return files.map(f => relative(rootPath, f)).sort()
+  return files.map(f => relative(rootPath, f).replace(/\\/g, '/')).sort()
 }
 
 // ── Inlined GitHub API (no octokit dependency) ──────────────
@@ -167,6 +246,7 @@ async function fetchGitHubFileContent(owner, repo, path, token) {
 // ── Analysis functions ──────────────────────────────────────
 
 function analyzeFileStructure(filePaths, rootPath) {
+  const projectRoots = findProjectRoots(filePaths)
   const relevantFiles = []
   const ignoredReasons = {}
   const languageSet = new Set()
@@ -183,20 +263,19 @@ function analyzeFileStructure(filePaths, rootPath) {
     }
 
     relevantFiles.push(filePath)
-    const dirParts = filePath.split('/').slice(0, -1)
-    let moduleId = 'module__root'
-    let moduleLabel = 'Root'
-    let moduleDesc = 'Root level files'
-
-    if (dirParts.length > 0) {
-      const topDir = dirParts[0]
-      moduleId = `module__${topDir.replace(/[^a-zA-Z0-9]/g, '_')}`
-      moduleLabel = topDir.charAt(0).toUpperCase() + topDir.slice(1)
-      moduleDesc = `${moduleLabel} module`
+    const { layerId, layerLabel, moduleId, moduleLabel } = assignLayerModule(filePath, projectRoots)
+    if (filePath.includes('easystork')) {
+      console.log('DEBUG:', JSON.stringify(filePath), 'assign:', JSON.stringify(assignLayerModule(filePath, projectRoots)))
     }
 
     if (!moduleMap.has(moduleId)) {
-      moduleMap.set(moduleId, { label: moduleLabel, filePaths: [], description: moduleDesc })
+      moduleMap.set(moduleId, {
+        label: moduleLabel,
+        filePaths: [],
+        description: `${moduleLabel} module`,
+        layerId,
+        layerLabel,
+      })
     }
     moduleMap.get(moduleId).filePaths.push(filePath)
   }
@@ -206,6 +285,8 @@ function analyzeFileStructure(filePaths, rootPath) {
     label: data.label,
     filePaths: data.filePaths,
     description: data.description,
+    layerId: data.layerId,
+    layerLabel: data.layerLabel,
   }))
 
   const total = relevantFiles.length
@@ -330,14 +411,14 @@ function buildNodesFromModules(tentativeModules, fileContents) {
   const layerMap = new Map()
 
   for (const mod of tentativeModules) {
-    const layerName = mod.label.toLowerCase().replace(/\s+/g, '_')
-    const layerId = `layer__${layerName}`
+    const layerId = mod.layerId || `layer__${mod.label.toLowerCase().replace(/\s+/g, '_')}`
+    const layerLabel = mod.layerLabel || mod.label
     
     if (!layerMap.has(layerId)) {
       layerMap.set(layerId, layerId)
       nodes.push({
         id: layerId,
-        label: mod.label,
+        label: layerLabel,
         type: 'layer',
         parentId: null,
         depth: 0,
@@ -476,26 +557,36 @@ function buildEdges(nodes, fileContents) {
   return edges
 }
 
+function wordMatch(text, word) {
+  const i = text.indexOf(word)
+  if (i === -1) return false
+  const before = i === 0 || /[^a-z0-9]/.test(text[i - 1])
+  const after = i + word.length >= text.length || /[^a-z0-9]/.test(text[i + word.length])
+  return before && after
+}
+
 function detectRole(nodeId, label, files) {
   const labelLower = label.toLowerCase()
   const fileStr = files.join(' ').toLowerCase()
   const combined = `${labelLower} ${fileStr}`
 
-  if (combined.includes('auth') || combined.includes('login') || combined.includes('session') || combined.includes('jwt') || combined.includes('oauth')) return 'authentication'
-  if (combined.includes('database') || combined.includes('db') || combined.includes('repository') || combined.includes('orm') || combined.includes('model') || combined.includes('entity')) return 'data_access'
-  if (combined.includes('api') || combined.includes('controller') || combined.includes('route') || combined.includes('endpoint') || combined.includes('handler')) return 'api_gateway'
-  if (combined.includes('service') || combined.includes('business') || combined.includes('logic') || combined.includes('use_case') || combined.includes('usecase')) return 'business_logic'
-  if (combined.includes('ui') || combined.includes('view') || combined.includes('component') || combined.includes('page') || combined.includes('screen') || combined.includes('frontend')) return 'presentation'
-  if (combined.includes('config') || combined.includes('setting') || combined.includes('env') || combined.includes('constant')) return 'configuration'
-  if (combined.includes('util') || combined.includes('helper') || combined.includes('common') || combined.includes('shared')) return 'utility'
-  if (combined.includes('test') || combined.includes('spec') || combined.includes('mock')) return 'testing'
-  if (combined.includes('middleware') || combined.includes('interceptor') || combined.includes('filter')) return 'middleware'
-  if (combined.includes('event') || combined.includes('message') || combined.includes('queue') || combined.includes('pubsub')) return 'messaging'
-  if (combined.includes('cache') || combined.includes('redis') || combined.includes('memory')) return 'caching'
-  if (combined.includes('worker') || combined.includes('job') || combined.includes('task') || combined.includes('cron') || combined.includes('scheduler')) return 'background_jobs'
-  if (combined.includes('security') || combined.includes('encrypt') || combined.includes('hash') || combined.includes('crypto')) return 'security'
-  if (combined.includes('log') || combined.includes('monitor') || combined.includes('metric') || combined.includes('trace')) return 'observability'
-  if (combined.includes('migration') || combined.includes('seed') || combined.includes('schema')) return 'database_migration'
+  const kw = (word) => word.length < 5 ? wordMatch(combined, word) : combined.includes(word)
+
+  if (kw('auth') || kw('login') || kw('session') || kw('jwt') || kw('oauth')) return 'authentication'
+  if (kw('database') || kw('db') || kw('repository') || kw('orm') || kw('model') || kw('entity')) return 'data_access'
+  if (kw('api') || kw('controller') || kw('route') || kw('endpoint') || kw('handler')) return 'api_gateway'
+  if (kw('service') || kw('business') || kw('logic') || kw('use_case') || kw('usecase') || kw('sync') || kw('syncer') || kw('synchronizer') || kw('engine')) return 'business_logic'
+  if (kw('ui') || kw('view') || kw('component') || kw('page') || kw('screen') || kw('frontend')) return 'presentation'
+  if (kw('config') || kw('setting') || kw('env') || kw('constant')) return 'configuration'
+  if (kw('util') || kw('helper') || kw('common') || kw('shared')) return 'utility'
+  if (kw('test') || kw('spec') || kw('mock')) return 'testing'
+  if (kw('middleware') || kw('interceptor') || kw('filter')) return 'middleware'
+  if (kw('event') || kw('message') || kw('queue') || kw('pubsub')) return 'messaging'
+  if (kw('cache') || kw('redis') || kw('memory')) return 'caching'
+  if (kw('worker') || kw('job') || kw('task') || kw('cron') || kw('scheduler')) return 'background_jobs'
+  if (kw('security') || kw('encrypt') || kw('hash') || kw('crypto')) return 'security'
+  if (kw('log') || kw('monitor') || kw('metric') || kw('trace')) return 'observability'
+  if (kw('migration') || kw('seed') || kw('schema')) return 'database_migration'
   
   return 'unknown'
 }
@@ -551,6 +642,7 @@ function detectArchitecturalPattern(nodes, edges) {
   
   const layerLabels = layerNodes.map(n => n.label.toLowerCase())
   const moduleLabels = moduleNodes.map(n => n.label.toLowerCase())
+  const moduleRoles = moduleNodes.map(n => n.detectedRole || 'unknown')
 
   const hasCleanArch = layerLabels.some(l => l.includes('domain') || l.includes('entity') || l.includes('usecase')) &&
                        layerLabels.some(l => l.includes('interface') || l.includes('adapter') || l.includes('presenter')) &&
@@ -562,11 +654,30 @@ function detectArchitecturalPattern(nodes, edges) {
   const hasMVC = moduleLabels.some(m => m.includes('model')) &&
                  moduleLabels.some(m => m.includes('view') || m.includes('ui') || m.includes('presenter')) &&
                  moduleLabels.some(m => m.includes('controller') || m.includes('handler'))
+
+  const hasPresentationLayer = layerLabels.some(l => l.includes('presentation') || l.includes('ui') || l.includes('api')) ||
+                               moduleLabels.some(m => m.includes('presentation') || m.includes('ui') || m.includes('api')) ||
+                               moduleRoles.some(r => r === 'presentation' || r === 'api_gateway') ||
+                               moduleNodes.some(m => m.files.some(function(f) {
+                                 const base = (f.split('/').pop() || '').toLowerCase()
+                                 return base.includes('page') || base.includes('component') || base.includes('layout') || base.includes('route')
+                               }))
+  const hasServiceLayer = layerLabels.some(l => l.includes('service') || l.includes('business') || l.includes('logic') || l.includes('sync')) ||
+                          moduleLabels.some(m => m.includes('service') || m.includes('business') || m.includes('logic') || m.includes('sync') || m.includes('core')) ||
+                          moduleRoles.some(r => r === 'business_logic') ||
+                          moduleNodes.some(m => m.files.some(function(f) {
+                            const base = (f.split('/').pop() || '').toLowerCase()
+                            return base.includes('sync') || base.includes('service') || base.includes('business') || base.includes('logic')
+                          }))
+  const hasDataLayer = layerLabels.some(l => l.includes('data') || l.includes('repository') || l.includes('database') || l.includes('db')) ||
+                       moduleLabels.some(m => m.includes('data') || m.includes('repository') || m.includes('database') || m.includes('db') || m.includes('model')) ||
+                       moduleRoles.some(r => r === 'data_access') ||
+                       moduleNodes.some(m => m.files.some(function(f) {
+                         const base = (f.split('/').pop() || '').toLowerCase()
+                         return base.includes('db') || base.includes('database') || base.includes('sql') || base.includes('repository') || base.includes('model') || base.includes('entity')
+                       }))
   
-  const hasLayered = layerLabels.length >= 3 &&
-                     (layerLabels.some(l => l.includes('presentation') || l.includes('ui') || l.includes('api')) &&
-                      layerLabels.some(l => l.includes('service') || l.includes('business') || l.includes('logic')) &&
-                      layerLabels.some(l => l.includes('data') || l.includes('repository') || l.includes('db')))
+  const hasLayered = (layerLabels.length >= 2) && hasPresentationLayer && hasServiceLayer && hasDataLayer
   
   const hasFeatureModules = moduleNodes.length > 5 &&
                             moduleNodes.every(m => m.files.length > 0) &&
@@ -582,8 +693,8 @@ function detectArchitecturalPattern(nodes, edges) {
   if (hasCleanArch) return { pattern: 'clean_architecture', confidence: 0.85, layout: 'concentric_rings' }
   if (hasHexagonal) return { pattern: 'hexagonal', confidence: 0.8, layout: 'concentric_rings' }
   if (hasMVC) return { pattern: 'mvc', confidence: 0.8, layout: 'horizontal_three_column' }
-  if (hasMicroservices) return { pattern: 'microservices', confidence: 0.75, layout: 'cluster' }
   if (hasLayered) return { pattern: 'layered_monolith', confidence: 0.75, layout: 'vertical_layers' }
+  if (hasMicroservices) return { pattern: 'microservices', confidence: 0.75, layout: 'cluster' }
   if (hasFeatureModules) return { pattern: 'feature_modules', confidence: 0.7, layout: 'grid_clusters' }
   if (hasPipeline) return { pattern: 'pipeline_etl', confidence: 0.7, layout: 'left_right_flow' }
   

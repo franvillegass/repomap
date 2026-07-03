@@ -53,18 +53,15 @@ Analyzes a repository and starts a local Express + Vite server showing the inter
 - `localPath` (string, optional) — Path to a local repository
 - `repoUrl` (string, optional) — GitHub repository URL
 - `githubToken` (string, optional) — GitHub token for private repos
-- `port` (number, optional, default 0) — Port for the server (0 = random free port)
+- `port` (number, optional, default 3000) — Port for the server
 
 **How to execute:**
 1. Analyze the repository using the analyzer (same as `analyze` action)
-2. Write the graph JSON to a temp file: `/tmp/repomap-<timestamp>.json`
-3. Spawn the visual server:
+2. Write the graph JSON to a temp file then show the user the command to run the server themselves, so the agent stays responsive:
    ```bash
-   npx @frannn2114/repomap-visual serve /tmp/repomap-<timestamp>.json --port <port>
+   npx @frannn2114/repomap-visual serve /path/to/repomap-<timestamp>.json --port=3000
    ```
-4. Parse stdout for the server URL (`Server ready at http://...`)
-5. Set up cleanup handlers to kill the child process on exit/SIGINT/SIGTERM
-6. Return `{ pid: <child_pid>, url: <server_url> }`
+3. Tell the user the server URL will be `http://localhost:3000` once they run the command
 
 ## RepoGraph JSON Format
 
