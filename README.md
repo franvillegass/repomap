@@ -1,342 +1,156 @@
-# RepoMap — Interactive Architecture Diagrams from GitHub
+# RepoMap — Skill edition
 
-An intelligent web application that analyzes GitHub repositories and generates interactive, editable architecture diagrams using AI. RepoMap distinguishes between runtime dependencies and structural design patterns to create meaningful visualizations of complex codebases.
+An [opencode](https://github.com/ssturdevant/opencode) skill that generates architectural maps of repositories as interactive, editable graphs. The skill uses a **two-phase pipeline**: a deterministic analyzer extracts raw structural data (zero LLM tokens spent on code reading), and the calling agent enriches it with semantic interpretation via a single LLM call.
 
-## Features
+> **🛈 Note:** The `main` branch contains the previous standalone web application version (Next.js + AI SDK). The main branch is the skill edition.
 
-- **GitHub Repository Analysis**: Automatically fetch and analyze any public GitHub repository via URL
-- **AI-Powered Architecture Detection**: Uses Claude (Anthropic) or Llama (Groq) to intelligently identify modules, layers, components, and their relationships
-- **Interactive Visualization**: React Flow-based graph editor for exploring and understanding codebase architecture
-- **Manual Diagram Creation**: Draw diagrams from scratch without needing a repository or API keys
-- **Persistent Storage**: IndexedDB-based local storage for analyzed graphs and chat history
-- **Branch & Exploration**: Create independent analysis branches to explore different architectural perspectives
-- **Progress Resumption**: Resume interrupted analyses if you hit rate limits
-- **Private Repository Support**: Analyze private repositories with GitHub personal access tokens
-- **Flexible AI Provider**: Switch between Anthropic Claude (premium) or Groq Llama (free) at runtime
-
-## Architecture
-
-### Tech Stack
-
-- **Frontend**: Next.js 14 (App Router), React 18, Tailwind CSS
-- **Graph Rendering**: React Flow for interactive node/edge visualization
-- **AI Integration**: Vercel AI SDK with support for Anthropic and Groq
-- **Data Persistence**: IndexedDB via `idb` library (no backend required)
-- **GitHub Integration**: Octokit for REST API access
-- **Validation**: Zod for schema validation
-- **Styling**: Tailwind CSS with custom design system
-
-### Project Structure
+## How it works
 
 ```
-src/
-├── app/
-│   ├── api/
-│   │   ├── analyze/route.ts          # Pipeline execution endpoint
-│   │   └── chat/route.ts              # AI chat endpoint
-│   ├── layout.tsx                     # Root layout
-│   └── page.tsx                       # Main UI entry point
-├── components/
-│   └── graph/
-│       ├── GraphRenderer.tsx          # Main visualization component
-│       ├── GraphNodes.tsx             # Node rendering logic
-│       ├── ManualEditor.tsx           # Manual diagram creation
-│       ├── ChatPanel.tsx              # AI chat interface
-│       ├── AlternativeViews.tsx       # Alternative visualization modes
-│       └── graphLayout.ts             # Graph layout algorithms
-├── branches/
-│   ├── UseBranches.tsx               # React context for branch management
-│   ├── BranchPanel.tsx               # Branch UI controls
-│   ├── storage.ts                     # Branch persistence
-│   ├── resolver.ts                    # Branch conflict resolution
-│   └── types.ts                       # TypeScript definitions
-├── lib/
-│   ├── pipeline/
-│   │   ├── pipeline.ts                # Main orchestrator
-│   │   ├── aiClient.ts                # AI SDK initialization
-│   │   ├── prompts/
-│   │   │   ├── pass1.ts               # Structure detection
-│   │   │   ├── pass2.ts               # Dependency mapping
-│   │   │   └── pass3.ts               # Semantic analysis
-│   │   ├── sampler/
-│   │   │   └── fileSampler.ts         # Token budget manager
-│   │   └── schemas/
-│   │       ├── graph.ts               # Graph JSON schema
-│   │       └── validation.ts          # Zod validators
-│   ├── storage/
-│   │   ├── graphStore.ts              # Graph persistence
-│   │   └── chatStore.ts               # Chat history
-│   ├── github/
-│   │   └── githubClient.ts            # GitHub API wrapper
-│   ├── modelConfig.ts                 # AI provider configuration
-│   └── ai.ts                          # General AI utilities
+┌─────────────┐     ┌──────────────┐     ┌─────────────┐     ┌──────────────┐
+│  analyzer   │ ──▶│  RawAnalysis  │ ──▶│  Agent (LLM)│ ──▶│  RepoGraph   │ ──▶ visual server
+│ (deterministic)   │ (structured data)  │ (semantic)  │     │  (JSON)      │
+└─────────────┘     └──────────────┘     └─────────────┘     └──────────────┘
 ```
 
-## Analysis Pipeline
+### Phase 1 — Analyzer (deterministic, no LLM)
 
-RepoMap uses a deterministic 3-pass analysis pipeline to understand repository structure:
+The analyzer (`analyzer.js`) is a pure JavaScript module that never calls an LLM. It:
 
-### Pass 1: Structure Detection
-- **Input**: File tree paths from GitHub
-- **Output**: Identified relevant files, tentative modules, size estimates
-- **Purpose**: High-level repository structure without analyzing code content
+- Scans the file tree (local or GitHub) respecting `.gitignore`
+- Extracts **imports** and **definitions** (function/class names + parameters) via regex
+- Builds the directory hierarchy (layers → modules → files)
+- Computes import-based edges between modules
 
-### Pass 2: Dependency Mapping
-- **Input**: Sampled file contents + modules from Pass 1
-- **Output**: Graph nodes and edges with type, confidence levels, and relationships
-- **Purpose**: Identify dependencies and connections between components
-- **Sampling**: Intelligent file sampling based on estimated repository size
+This produces a `RawAnalysis` — a compact JSON object (~10 KB even for large repos) containing module summaries, file-level data, and structural connections. The agent **never reads source code directly**, saving thousands of tokens.
 
-### Pass 3: Semantic Analysis
-- **Input**: Graph structure from Pass 2 (topology only)
-- **Output**: Node roles, design patterns, layout suggestions
-- **Purpose**: Add semantic meaning and improve visualization layout
-- **Efficiency**: Works with graph topology only (minimal token cost)
+### Phase 2 — Agent enrichment (LLM, one call)
 
-## Graph Schema
+The calling agent receives the `RawAnalysis` and builds a single prompt that asks the LLM to:
 
-RepoMap uses a standardized JSON schema for representing architectures:
+- Assign an architectural **role** to each module (presentation, api_gateway, business_logic, data_access, etc.)
+- Detect the overall **architectural pattern** (layered_monolith, hexagonal, mvc, microservices, etc.)
+- Pick a **layout template** for the visualizer
+- Optionally improve module labels for readability
 
-```typescript
-interface RepoGraph {
-  meta: {
-    repoUrl: string
-    repoName: string
-    analyzedAt: string
-    detectedPattern: string
-    estimatedSize: 'small' | 'medium' | 'large'
-  }
-  nodes: GraphNode[] luego 
-  edges: GraphEdge[]
-  overlay: {
-    nodeEdits: Record<string, NodeEdit>
-    edgeEdits: Record<string, EdgeEdit>
-  }
-}
+The LLM produces the completed `RepoGraph` JSON.
 
-interface GraphNode {
-  id: string                    // Format: 'type__name' (layer__api, module__auth)
-  label: string
-  type: 'layer' | 'module' | 'file' | 'component'
-  depth: 0 | 1 | 2 | 3
-  role?: string                 // 'controller', 'service', 'utility', etc.
-  metadata: Record<string, any>
-}
+### Phase 3 — Visualization
 
-interface GraphEdge {
-  id: string
-  source: string
-  target: string
-  type: 'import' | 'dependency' | 'reference'
-  confidence: 'high' | 'medium' | 'uncertain'
-  label?: string
-  metadata: Record<string, any>
-}
+The `RepoGraph` is served by `@frannn2114/repomap-visual`, an npm package that provides:
+
+- **React Flow graph** with node inspection sidebar
+- **Alternative views**: onion rings, layer stack, clusters, pipeline flow
+- **Branch system**: explore alternative architectures without modifying the base graph — add/delete nodes and edges, create connections, all persisted in IndexedDB
+- **Viewport culling** for smooth performance on large graphs
+
+## Skill structure
+
+```
+.opencode/skills/repomap/
+├── SKILL.md          # Skill instructions for the calling agent
+├── index.js          # Entry point: analyze() and serve()
+├── analyzer.js       # Deterministic scanner (Phase 1)
+├── package.json      # Dependencies (glob)
+└── node_modules/
 ```
 
-## Getting Started
+## Actions
 
-### Prerequisites
+### `analyze`
 
-- Node.js 18+ 
-- npm or yarn
-- For private repository analysis: GitHub Personal Access Token
+Analyzes a repository locally or via GitHub and returns a `RawAnalysis`.
 
-### Installation
+```js
+import { analyzeRepository } from './analyzer.js'
+const raw = await analyzeRepository({
+  localPath: '/path/to/repo',
+  // or: repoUrl: 'https://github.com/owner/repo',
+  // githubToken: 'ghp_...',
+})
+// raw = { meta, modules, fileData, nodes, edges }
+```
+
+### `serve`
+
+Analyzes + shows the user the npx command to start the visual server:
 
 ```bash
-# Clone repository
+npx @frannn2114/repomap-visual serve /tmp/repomap-<timestamp>.json --port=3000
+```
+
+## RepoGraph JSON format
+
+```jsonc
+{
+  "meta": {
+    "repoUrl": "local://my-project",
+    "repoName": "my-project",
+    "detectedPattern": "layered_monolith",
+    "layoutTemplate": "vertical_layers",
+    "patternConfidence": 0.85
+  },
+  "nodes": [
+    { "id": "layer__backend", "label": "Backend", "type": "layer", "depth": 0,
+      "files": [], "detectedRole": "", "patterns": [], "metadata": {} },
+    { "id": "module__api", "label": "Api", "type": "module", "depth": 1,
+      "parentId": "layer__backend", "files": ["backend/api/routes.py"],
+      "detectedRole": "api_gateway", "patterns": [], "metadata": {} }
+  ],
+  "edges": [
+    { "id": "edge_1", "source": "module__api", "target": "module__services",
+      "edgeType": "engineering", "strength": 3, "confidence": "high" }
+  ],
+  "overlay": { "version": 0, "nodeOverrides": {}, "edgeOverrides": {},
+    "manualNodes": [], "manualEdges": [] }
+}
+```
+
+## Design decisions
+
+### Why the agent never reads source code
+
+The deterministic analyzer extracts structured data (imports, definitions, directory structure) without any LLM involvement. The agent receives a compact `RawAnalysis` and reasons about architecture using only this metadata — not raw source files. On a typical repo of 200 files, this saves ~95% of the tokens compared to feeding file contents to the LLM.
+
+### What the analyzer does vs. what the agent does
+
+| Task | Done by | Why |
+|---|---|---|
+| File scanning (glob, gitignore) | Analyzer | Deterministic, fast |
+| Import extraction | Analyzer | Regex, no intelligence needed |
+| Definition extraction | Analyzer | Regex, fast |
+| Directory structure | Analyzer | Deterministic |
+| Edge construction | Analyzer | Based on imports, no reasoning |
+| Role assignment | Agent (LLM) | Requires semantic understanding |
+| Pattern detection | Agent (LLM) | Requires architectural reasoning |
+| Module labeling | Agent (LLM) | Human-readable descriptions |
+
+### Why file-level nodes are hidden in the graph
+
+The visualizer only shows **layer** and **module** nodes by default. Individual files are accessible by expanding a module — this keeps the graph clean and performant (from ~6000 nodes to ~200 nodes for large repos).
+
+## Getting started
+
+```bash
+# Clone
 git clone <repo-url>
 cd repomap-pipeline-v2
 
-# Install dependencies
+# Install skill dependencies
+cd .opencode/skills/repomap
 npm install
-
-# Start development server
-npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+Then use the repomap skill within opencode — the agent will call `analyze()` or `serve()` as needed.
 
-### Configuration
+## npm package
 
-#### AI Provider Selection
-
-Choose between two providers:
-
-**Option 1: Anthropic Claude (Premium)**
-- Requires Anthropic API subscription
-- Better analysis quality
-- Higher accuracy for complex architectures
-- Uses `claude-sonnet-4-20250514` by default
-
-**Option 2: Groq Llama (Free)**
-- Requires free Groq API key from [console.groq.com](https://console.groq.com)
-- Uses `llama-3.3-70b` model
-- Rate limited to ~30 requests/minute
-- Progress auto-saves between sessions when rate limited
-
-Switch providers in the UI or via environment variables:
-```bash
-AI_PROVIDER=groq          # or 'anthropic'
-AI_MODEL=llama-3.3-70b    # or 'claude-sonnet-4-20250514'
-GROQ_API_KEY=gsk_...      # Groq key
-ANTHROPIC_API_KEY=sk-...  # Anthropic key
-```
-
-#### GitHub Configuration
-
-For private repositories:
-1. Create a GitHub Personal Access Token at [github.com/settings/tokens](https://github.com/settings/tokens)
-2. Paste the token in the "add github token" section on the UI
-3. Tokens are stored in sessionStorage and never persisted
-
-### Usage
-
-#### Auto-Analysis
-
-1. Enter a GitHub repository URL (e.g., `facebook/react`)
-2. Select AI provider and add any required API keys
-3. Click "analyze repository"
-4. Watch the 3-pass analysis progress
-5. Explore the interactive diagram
-
-#### Manual Creation
-
-1. Click "create diagram manually"
-2. Draw nodes and connect them
-3. Assign roles, types, and metadata
-4. Save to local storage
-
-#### Branch Exploration
-
-1. From an analyzed repository, click "create branch"
-2. Explore alternative architectures independently
-3. Merge changes back to base graph
-4. Compare different perspectives
-
-#### Chat & Discussion
-
-1. Interact with the AI about the architecture
-2. Ask questions about dependencies, patterns, and design
-3. Get suggestions for improvements
-4. Chat history persists in IndexedDB
-
-## Key Design Decisions
-
-### Token Budget Management
-
-File sampling in Pass 2 adapts to repository size:
-- **Small** (<300 lines): Full content, no skeleton
-- **Medium** (<150 lines): Skeleton mode (imports/exports + function signatures)
-- **Large** (<80 lines): Skeleton mode with aggressive truncation
-
-This ensures consistent token usage across all repository sizes.
-
-### Confidence Levels
-
-Edges include confidence annotations:
-- **high**: Explicit imports/dependencies in source code
-- **medium**: Inferred from naming patterns or proximity
-- **uncertain**: Ambiguous relationships requiring user clarification
-
-Users can reclassify edges in the UI to provide feedback.
-
-### User Edits Isolation
-
-All user modifications are stored in an `overlay` layer separate from the analyzed graph. This allows:
-- Re-analysis without losing manual edits
-- Easy diff between analyzed and edited states
-- Non-destructive exploration
-
-### Deterministic Pipeline
-
-The analysis pipeline is deterministic (not autonomous tool use):
-- Predictable execution flow (3 passes always in order)
-- Easier debugging and error recovery
-- Resumable at pass boundaries if rate limited
-- Better token budget control
-
-## Development
-
-### Available Scripts
+The visual server is published as [`@frannn2114/repomap-visual`](https://www.npmjs.com/package/@frannn2114/repomap-visual) on npm. It provides the React Flow graph, alternative views, branch system, and Express+Vite server.
 
 ```bash
-npm run dev      # Start development server
-npm run build    # Build for production
-npm start        # Start production server
-npm run lint     # Run ESLint
+npx @frannn2114/repomap-visual serve graph.json --port=3000
 ```
-
-### Building for Production
-
-```bash
-npm run build
-npm start
-```
-
-The production build optimizes for bundle size and performance. Graph renderer components are dynamically imported.
-
-## Data Storage
-
-RepoMap uses **IndexedDB** for all local persistence:
-- **Graphs**: Complete analyzed architectures
-- **Progress**: Resume state for interrupted analyses
-- **Chat History**: Conversation logs per repository
-- **Model Configuration**: UI preferences
-
-No data is sent to external servers (except GitHub API and chosen AI provider).
-
-## Limitations & Future Work
-
-### Current Limitations
-- Public repositories only (without GitHub token)
-- Single-file analysis depth (cannot follow full call stacks)
-- No monorepo-specific support
-- Manual layout adjustments required for complex graphs
-
-### Planned Features
-- [ ] Supabase integration for cloud sync
-- [ ] Monorepo-aware analysis
-- [ ] Custom analysis templates
-- [ ] Export to Mermaid/PlantUML
-- [ ] Team collaboration features
-- [ ] Benchmark and cost estimation
-
-## Troubleshooting
-
-### Rate Limiting Issues
-- RepoMap automatically saves progress
-- Use the "resume" button to continue from where you left off
-- Check API key rate limits for your chosen provider
-
-### Graph Not Rendering
-- Check browser console for errors
-- Ensure IndexedDB is enabled
-- Try clearing browser cache and reloading
-
-### Poor Analysis Quality
-- Try the Anthropic/Claude provider for better results
-- Ensure the repository is public or token has access
-- Check that the repository structure is conventional
-
-## Contributing
-
-Contributions welcome! Areas of interest:
-- Additional AI providers (OpenAI, Together, etc.)
-- Alternative graph layouts
-- Export formats
-- Performance optimizations
 
 ## License
 
-[Your License Here]
-
-## Credits
-
-Built with:
-- [Next.js](https://nextjs.org)
-- [React Flow](https://reactflow.dev)
-- [Vercel AI SDK](https://github.com/vercel/ai)
-- [Octokit](https://octokit.js.org)
-- [Tailwind CSS](https://tailwindcss.com)
+MIT
