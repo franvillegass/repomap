@@ -5,6 +5,8 @@ import { fileURLToPath } from 'url'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 
+// ── Config ──────────────────────────────────────────────────
+
 const LANGUAGE_EXTENSIONS = {
   '.ts': 'TypeScript', '.tsx': 'TypeScript',
   '.js': 'JavaScript', '.jsx': 'JavaScript',
@@ -50,9 +52,26 @@ const PROJECT_MARKERS = [
   'pom.xml', 'build.gradle', 'build.sbt',
 ]
 
-
 const ENTRY_POINTS = new Set(['main.py', 'app.py', 'manage.py', 'index.js', 'index.ts', 'app.js', 'app.ts', 'main.js', 'main.ts'])
 const MAX_ENTRY_DEPTH = 2
+const MAX_FILE_SIZE = 500 * 1024 // 500KB - skip huge files
+const BATCH_SIZE = 50 // Process files in batches to avoid blocking
+
+// Pre-compiled ignore patterns for O(1) matching
+const IGNORE_PATTERNS = [
+  'node_modules', 'dist', 'build', '.next', '.git', 'target', '__pycache__',
+  '.pyc', '.min.js', '.min.css', 'coverage', '.nyc_output', 'vendor',
+  'bower_components', '.lock', 'package-lock.json', 'yarn.lock',
+  'pnpm-lock.yaml', 'Cargo.lock', 'go.sum', 'poetry.lock', 'Pipfile.lock',
+  '.eslintrc', '.prettierrc', 'tsconfig.json', 'jest.config', 'vitest.config',
+  '.test.', '.spec.', '__tests__', '__mocks__', '.d.ts', '.DS_Store',
+]
+const IGNORE_REGEXES = IGNORE_PATTERNS.map(p => {
+  const escaped = p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\*\\\*/g, '.*').replace(/\\\*/g, '[^/]*')
+  return new RegExp(escaped, 'i')
+})
+
+// ── Project root detection ──────────────────────────────────
 
 function findProjectRoots(filePaths) {
   const dirSet = new Set()
@@ -122,75 +141,34 @@ function assignLayerModule(filePath, projectRoots) {
   }
 }
 
-const IGNORE_PATTERNS = [
-  '**/node_modules/**',
-  '**/dist/**',
-  '**/build/**',
-  '**/.next/**',
-  '**/.git/**',
-  '**/target/**',
-  '**/__pycache__/**',
-  '**/*.pyc',
-  '**/*.min.js',
-  '**/*.min.css',
-  '**/coverage/**',
-  '**/.nyc_output/**',
-  '**/vendor/**',
-  '**/bower_components/**',
-  '**/*.lock',
-  '**/package-lock.json',
-  '**/yarn.lock',
-  '**/pnpm-lock.yaml',
-  '**/Cargo.lock',
-  '**/go.sum',
-  '**/poetry.lock',
-  '**/Pipfile.lock',
-  '**/.eslintrc*',
-  '**/.prettierrc*',
-  '**/tsconfig.json',
-  '**/jest.config.*',
-  '**/vitest.config.*',
-  '**/*.test.*',
-  '**/*.spec.*',
-  '**/__tests__/**',
-  '**/__mocks__/**',
-  '**/*.d.ts',
-  '**/.DS_Store',
-]
-
-function convertGitIgnoreToGlob(content) {
-  const patterns = []
-  for (const line of content.split('\n')) {
-    const t = line.trim()
-    if (!t || t.startsWith('#') || t.startsWith('!')) continue
-    let p = t
-    if (p.endsWith('/')) p += '**'
-    if (p.startsWith('/')) p = p.slice(1)
-    else p = '**/' + p
-    patterns.push(p)
-  }
-  return patterns
-}
+// ── Optimized file filtering ────────────────────────────────
 
 function getLanguage(filePath) {
   const ext = extname(filePath).toLowerCase()
   return LANGUAGE_EXTENSIONS[ext] || 'Unknown'
 }
 
-function shouldIgnore(filePath, rootPath, extraPatterns = []) {
-  const relPath = relative(rootPath, filePath)
-  const allPatterns = [...IGNORE_PATTERNS, ...extraPatterns]
-  return allPatterns.some(pattern => {
-    const regex = new RegExp('^' + pattern.replace(/\*\*/g, '.*').replace(/\*/g, '[^/]*') + '$')
-    return regex.test(relPath) || regex.test(filePath)
-  })
+function shouldIgnore(filePath) {
+  const lower = filePath.toLowerCase()
+  for (const re of IGNORE_REGEXES) {
+    if (re.test(lower)) return true
+  }
+  return false
 }
 
 function loadGitIgnorePatterns(rootPath) {
   const patterns = []
   try {
     const content = readFileSync(join(rootPath, '.gitignore'), 'utf-8')
-    patterns.push(...convertGitIgnoreToGlob(content))
+    for (const line of content.split('\n')) {
+      const t = line.trim()
+      if (!t || t.startsWith('#') || t.startsWith('!')) continue
+      let p = t
+      if (p.endsWith('/')) p += '**'
+      if (p.startsWith('/')) p = p.slice(1)
+      else p = '**/' + p
+      patterns.push(p)
+    }
   } catch {}
   return patterns
 }
@@ -209,11 +187,8 @@ async function getLocalFileTree(rootPath) {
   return files.map(f => relative(rootPath, f).replace(/\\/g, '/')).sort()
 }
 
-// ── Inlined GitHub API (no octokit dependency) ──────────────
+// ── GitHub API (no octokit) ─────────────────────────────────
 
-/**
- * Parses a GitHub URL into owner + repo.
- */
 function parseGithubUrl(url) {
   const match = url
     .trim()
@@ -222,14 +197,10 @@ function parseGithubUrl(url) {
   return { owner: match[1], repo: match[2] }
 }
 
-/**
- * Fetches the full file tree via the GitHub Git Trees API.
- */
 async function fetchFileTree(owner, repo, token) {
   const headers = { Accept: 'application/vnd.github.v3+json' }
   if (token) headers['Authorization'] = `Bearer ${token}`
 
-  // Resolve default branch
   const repoRes = await fetch(`https://api.github.com/repos/${owner}/${repo}`, { headers })
   if (!repoRes.ok) throw new Error(`GitHub API error: ${repoRes.status} ${repoRes.statusText}`)
   const repoData = await repoRes.json()
@@ -251,9 +222,6 @@ async function fetchFileTree(owner, repo, token) {
     .map(item => item.path)
 }
 
-/**
- * Fetches a single file's content via the GitHub Contents API.
- */
 async function fetchGitHubFileContent(owner, repo, path, token) {
   const headers = { Accept: 'application/vnd.github.v3+json' }
   if (token) headers['Authorization'] = `Bearer ${token}`
@@ -262,39 +230,212 @@ async function fetchGitHubFileContent(owner, repo, path, token) {
   if (!res.ok) throw new Error(`GitHub API error fetching ${path}: ${res.status} ${res.statusText}`)
 
   const data = await res.json()
-  if (Array.isArray(data)) throw new Error(`Path "${path}" is a directory, not a file.`)
-  if (data.type !== 'file') throw new Error(`Path "${path}" is not a regular file (type: ${data.type}).`)
+  if (Array.isArray(data)) throw new Error(`Path "${path}" is a directory.`)
+  if (data.type !== 'file') throw new Error(`Path "${path}" is not a regular file.`)
   if (!data.content || typeof data.content !== 'string') throw new Error(`No content returned for "${path}".`)
 
   const cleaned = data.content.replace(/\n/g, '')
   return Buffer.from(cleaned, 'base64').toString('utf-8')
 }
 
-// ── Analysis functions ──────────────────────────────────────
+// ── Import/Definition extraction ────────────────────────────
+
+// Cache compiled regexes per language
+const IMPORT_REGEX_CACHE = new Map()
+const DEF_REGEX_CACHE = new Map()
+
+function getImportRegex(language) {
+  if (IMPORT_REGEX_CACHE.has(language)) return IMPORT_REGEX_CACHE.get(language)
+  let regexes
+  if (language === 'TypeScript' || language === 'JavaScript') {
+    regexes = [
+      /import\s+(?:[\w*\s{},]+\s+from\s+)?['"]([^'"]+)['"]/g,
+      /require\s*\(\s*['"]([^'"]+)['"]\s*\)/g,
+    ]
+  } else if (language === 'Python') {
+    regexes = [/^(?:from\s+(\S+)\s+)?import\s+(\S+)/gm]
+  } else if (language === 'Go') {
+    regexes = [/import\s+(?:"([^"]+)"|\(([\s\S]*?)\))/g]
+  } else if (language === 'Rust') {
+    regexes = [/use\s+([\w:{}*,\s]+);/g]
+  } else if (language === 'Java') {
+    regexes = [/import\s+([\w.]+);/g]
+  } else if (language === 'C++' || language === 'C') {
+    regexes = [/#include\s*[<"]([^>"]+)[>"]/g]
+  } else if (language === 'C#') {
+    regexes = [/using\s+([\w.]+);/g]
+  } else {
+    regexes = []
+  }
+  IMPORT_REGEX_CACHE.set(language, regexes)
+  return regexes
+}
+
+function getDefRegex(language) {
+  if (DEF_REGEX_CACHE.has(language)) return DEF_REGEX_CACHE.get(language)
+  let regexes
+  if (language === 'TypeScript' || language === 'JavaScript') {
+    regexes = [
+      { re: /(?:export\s+)?class\s+(\w+)/g, type: 'class' },
+      { re: /(?:export\s+)?interface\s+(\w+)/g, type: 'interface' },
+      { re: /(?:export\s+)?(?:async\s+)?function\s+(\w+)/g, type: 'function' },
+      { re: /(?:export\s+)?const\s+(\w+)\s*=/g, type: 'const' },
+    ]
+  } else if (language === 'Python') {
+    regexes = [
+      { re: /^class\s+(\w+)/gm, type: 'class' },
+      { re: /^def\s+(\w+)/gm, type: 'function' },
+    ]
+  } else if (language === 'Go') {
+    regexes = [
+      { re: /func\s+(?:\(\w+\s+\w+\)\s+)?(\w+)/g, type: 'function' },
+      { re: /type\s+(\w+)\s+(?:struct|interface)/g, type: 'type' },
+    ]
+  } else if (language === 'Rust') {
+    regexes = [
+      { re: /struct\s+(\w+)/g, type: 'struct' },
+      { re: /enum\s+(\w+)/g, type: 'enum' },
+      { re: /fn\s+(\w+)/g, type: 'function' },
+      { re: /trait\s+(\w+)/g, type: 'trait' },
+    ]
+  } else if (language === 'Java') {
+    regexes = [
+      { re: /(?:public\s+)?class\s+(\w+)/g, type: 'class' },
+      { re: /interface\s+(\w+)/g, type: 'interface' },
+      { re: /(?:public|private|protected)?\s+(?:static\s+)?\w+\s+(\w+)\s*\(/g, type: 'method' },
+    ]
+  } else {
+    regexes = []
+  }
+  DEF_REGEX_CACHE.set(language, regexes)
+  return regexes
+}
+
+function extractImports(content, language) {
+  const imports = []
+  const regexes = getImportRegex(language)
+  
+  if (language === 'Python') {
+    const re = regexes[0]
+    re.lastIndex = 0
+    let match
+    while ((match = re.exec(content)) !== null) {
+      if (match[1]) imports.push(match[1])
+      imports.push(match[2])
+    }
+  } else if (language === 'Go') {
+    const re = regexes[0]
+    re.lastIndex = 0
+    let match
+    while ((match = re.exec(content)) !== null) {
+      if (match[1]) imports.push(match[1])
+      else if (match[2]) {
+        const subImports = match[2].match(/"([^"]+)"/g)
+        if (subImports) imports.push(...subImports.map(s => s.slice(1, -1)))
+      }
+    }
+  } else if (language === 'Rust') {
+    const re = regexes[0]
+    re.lastIndex = 0
+    let match
+    while ((match = re.exec(content)) !== null) {
+      imports.push(...match[1].split(/[,{}]/).map(s => s.trim()).filter(Boolean))
+    }
+  } else {
+    for (const re of regexes) {
+      re.lastIndex = 0
+      let match
+      while ((match = re.exec(content)) !== null) {
+        imports.push(match[1])
+      }
+    }
+  }
+  
+  return [...new Set(imports)]
+}
+
+function extractDefinitions(content, language) {
+  const defs = []
+  const regexes = getDefRegex(language)
+  for (const { re, type } of regexes) {
+    re.lastIndex = 0
+    let match
+    while ((match = re.exec(content)) !== null) {
+      defs.push({ name: match[1], type })
+    }
+  }
+  return defs
+}
+
+// ── Optimized node/edge building ────────────────────────────
+
+// Build a definition index: Map<defName, Set<filePath>> for O(1) lookup
+function buildDefinitionIndex(fileContents) {
+  const index = new Map()
+  for (const [filePath, content] of fileContents) {
+    if (!content) continue
+    const language = getLanguage(filePath)
+    const defs = extractDefinitions(content, language)
+    for (const def of defs) {
+      if (!index.has(def.name)) {
+        index.set(def.name, new Set())
+      }
+      index.get(def.name).add(filePath)
+    }
+  }
+  return index
+}
+
+// Resolve an import to target file paths using the definition index
+function resolveImport(imp, defIndex, currentFile) {
+  // Try exact definition name match
+  const exact = defIndex.get(imp.split('/').pop().split('.').pop())
+  if (exact) {
+    for (const file of exact) {
+      if (file !== currentFile) return file
+    }
+  }
+  
+  // Try path-based resolution
+  const impPath = imp.replace(/\./g, '/')
+  for (const [defName, files] of defIndex) {
+    if (imp.includes(defName) || defName.includes(imp)) {
+      for (const file of files) {
+        if (file !== currentFile) return file
+      }
+    }
+    if (impPath && fileIncludesImp(imp, file)) {
+      for (const file of files) {
+        if (file !== currentFile && file.includes(impPath)) return file
+      }
+    }
+  }
+  return null
+}
+
+function fileIncludesImp(imp, filePath) {
+  const normalized = imp.replace(/\./g, '/')
+  return filePath.includes(normalized)
+}
 
 function analyzeFileStructure(filePaths, rootPath) {
   const projectRoots = findProjectRoots(filePaths)
-  const gitIgnorePatterns = loadGitIgnorePatterns(rootPath)
   const relevantFiles = []
   const ignoredReasons = {}
   const languageSet = new Set()
   const moduleMap = new Map()
 
   for (const filePath of filePaths) {
-    const fullPath = join(rootPath, filePath)
     const language = getLanguage(filePath)
     if (language !== 'Unknown') languageSet.add(language)
 
-    if (shouldIgnore(fullPath, rootPath, gitIgnorePatterns)) {
+    if (shouldIgnore(filePath)) {
       ignoredReasons[filePath] = 'Ignored pattern'
       continue
     }
 
     relevantFiles.push(filePath)
     const { layerId, layerLabel, moduleId, moduleLabel } = assignLayerModule(filePath, projectRoots)
-    if (filePath.includes('easystork')) {
-      console.log('DEBUG:', JSON.stringify(filePath), 'assign:', JSON.stringify(assignLayerModule(filePath, projectRoots)))
-    }
 
     if (!moduleMap.has(moduleId)) {
       moduleMap.set(moduleId, {
@@ -329,109 +470,32 @@ function analyzeFileStructure(filePaths, rootPath) {
   }
 }
 
-function extractImports(content, language) {
-  const imports = []
-  
-  if (language === 'TypeScript' || language === 'JavaScript') {
-    const importRegex = /import\s+(?:[\w*\s{},]+\s+from\s+)?['"]([^'"]+)['"]/g
-    const requireRegex = /require\s*\(\s*['"]([^'"]+)['"]\s*\)/g
-    let match
-    while ((match = importRegex.exec(content)) !== null) imports.push(match[1])
-    while ((match = requireRegex.exec(content)) !== null) imports.push(match[1])
-  } else if (language === 'Python') {
-    const importRegex = /^(?:from\s+(\S+)\s+)?import\s+(\S+)/gm
-    let match
-    while ((match = importRegex.exec(content)) !== null) {
-      if (match[1]) imports.push(match[1])
-      imports.push(match[2])
-    }
-  } else if (language === 'Go') {
-    const importRegex = /import\s+(?:"([^"]+)"|\(([\s\S]*?)\))/g
-    let match
-    while ((match = importRegex.exec(content)) !== null) {
-      if (match[1]) imports.push(match[1])
-      else if (match[2]) {
-        const subImports = match[2].match(/"([^"]+)"/g)
-        if (subImports) imports.push(...subImports.map(s => s.slice(1, -1)))
-      }
-    }
-  } else if (language === 'Rust') {
-    const useRegex = /use\s+([\w:{}*,\s]+);/g
-    let match
-    while ((match = useRegex.exec(content)) !== null) {
-      imports.push(...match[1].split(/[,{}]/).map(s => s.trim()).filter(Boolean))
-    }
-  } else if (language === 'Java') {
-    const importRegex = /import\s+([\w.]+);/g
-    let match
-    while ((match = importRegex.exec(content)) !== null) imports.push(match[1])
-  } else if (language === 'C++' || language === 'C') {
-    const includeRegex = /#include\s*[<"]([^>"]+)[>"]/g
-    let match
-    while ((match = includeRegex.exec(content)) !== null) imports.push(match[1])
-  } else if (language === 'C#') {
-    const usingRegex = /using\s+([\w.]+);/g
-    let match
-    while ((match = usingRegex.exec(content)) !== null) imports.push(match[1])
-  }
-  
-  return [...new Set(imports)]
-}
-
-function extractDefinitions(content, language) {
-  const defs = []
-  
-  if (language === 'TypeScript' || language === 'JavaScript') {
-    const classRegex = /(?:export\s+)?class\s+(\w+)/g
-    const interfaceRegex = /(?:export\s+)?interface\s+(\w+)/g
-    const functionRegex = /(?:export\s+)?(?:async\s+)?function\s+(\w+)/g
-    const constRegex = /(?:export\s+)?const\s+(\w+)\s*=/g
-    let match
-    while ((match = classRegex.exec(content)) !== null) defs.push({ name: match[1], type: 'class' })
-    while ((match = interfaceRegex.exec(content)) !== null) defs.push({ name: match[1], type: 'interface' })
-    while ((match = functionRegex.exec(content)) !== null) defs.push({ name: match[1], type: 'function' })
-    while ((match = constRegex.exec(content)) !== null) defs.push({ name: match[1], type: 'const' })
-  } else if (language === 'Python') {
-    const classRegex = /^class\s+(\w+)/gm
-    const functionRegex = /^def\s+(\w+)/gm
-    let match
-    while ((match = classRegex.exec(content)) !== null) defs.push({ name: match[1], type: 'class' })
-    while ((match = functionRegex.exec(content)) !== null) defs.push({ name: match[1], type: 'function' })
-  } else if (language === 'Go') {
-    const funcRegex = /func\s+(?:\(\w+\s+\w+\)\s+)?(\w+)/g
-    const typeRegex = /type\s+(\w+)\s+(?:struct|interface)/g
-    let match
-    while ((match = funcRegex.exec(content)) !== null) defs.push({ name: match[1], type: 'function' })
-    while ((match = typeRegex.exec(content)) !== null) defs.push({ name: match[1], type: 'type' })
-  } else if (language === 'Rust') {
-    const structRegex = /struct\s+(\w+)/g
-    const enumRegex = /enum\s+(\w+)/g
-    const fnRegex = /fn\s+(\w+)/g
-    const traitRegex = /trait\s+(\w+)/g
-    let match
-    while ((match = structRegex.exec(content)) !== null) defs.push({ name: match[1], type: 'struct' })
-    while ((match = enumRegex.exec(content)) !== null) defs.push({ name: match[1], type: 'enum' })
-    while ((match = fnRegex.exec(content)) !== null) defs.push({ name: match[1], type: 'function' })
-    while ((match = traitRegex.exec(content)) !== null) defs.push({ name: match[1], type: 'trait' })
-  } else if (language === 'Java') {
-    const classRegex = /(?:public\s+)?class\s+(\w+)/g
-    const interfaceRegex = /interface\s+(\w+)/g
-    const methodRegex = /(?:public|private|protected)?\s+(?:static\s+)?\w+\s+(\w+)\s*\(/g
-    let match
-    while ((match = classRegex.exec(content)) !== null) defs.push({ name: match[1], type: 'class' })
-    while ((match = interfaceRegex.exec(content)) !== null) defs.push({ name: match[1], type: 'interface' })
-    while ((match = methodRegex.exec(content)) !== null) defs.push({ name: match[1], type: 'method' })
-  }
-  
-  return defs
-}
-
 async function readFileContent(filePath) {
   try {
+    const stats = statSync(filePath)
+    if (stats.size > MAX_FILE_SIZE) {
+      console.warn(`[analyzer] Skipping large file ${filePath} (${(stats.size / 1024).toFixed(0)}KB)`)
+      return ''
+    }
     return readFileSync(filePath, 'utf-8')
   } catch {
     return ''
   }
+}
+
+// Batch-process async operations to avoid blocking
+async function batchProcess(items, processor, batchSize = BATCH_SIZE) {
+  const results = []
+  for (let i = 0; i < items.length; i += batchSize) {
+    const batch = items.slice(i, i + batchSize)
+    const batchResults = await Promise.all(batch.map(processor))
+    results.push(...batchResults)
+    // Yield to event loop between batches
+    if (i + batchSize < items.length) {
+      await new Promise(r => setTimeout(r, 0))
+    }
+  }
+  return results
 }
 
 function buildNodesFromModules(tentativeModules, fileContents) {
@@ -470,7 +534,7 @@ function buildNodesFromModules(tentativeModules, fileContents) {
       const content = fileContents.get(filePath) || ''
       const language = getLanguage(filePath)
       const defs = extractDefinitions(content, language)
-      const lineCount = content.split('\n').length
+      const lineCount = content ? content.split('\n').length : 0
       
       let complexity = 'low'
       if (lineCount > 500) complexity = 'high'
@@ -486,17 +550,15 @@ function buildNodesFromModules(tentativeModules, fileContents) {
         metadata: { language, lineCount, complexity },
       }
       nodes.push(fileNode)
-
-      /* component nodes removed — they represent code symbols (classes/functions),
-         not architectural components. Module expand already shows file contents. */
     }
   }
 
   return nodes
 }
 
-function buildEdges(nodes, fileContents) {
+function buildEdgesOptimized(nodes, fileContents) {
   const edges = []
+  const edgeSet = new Set() // O(1) deduplication
   const nodeByFile = new Map()
   const nodeById = new Map()
 
@@ -507,6 +569,9 @@ function buildEdges(nodes, fileContents) {
     }
   }
 
+  // Build definition index for O(1) import resolution
+  const defIndex = buildDefinitionIndex(fileContents)
+
   for (const node of nodes) {
     if (node.type !== 'file' && node.type !== 'component') continue
     
@@ -514,33 +579,20 @@ function buildEdges(nodes, fileContents) {
     if (!filePath) continue
     
     const content = fileContents.get(filePath) || ''
+    if (!content) continue
+    
     const language = getLanguage(filePath)
     const imports = extractImports(content, language)
 
     for (const imp of imports) {
-      let targetId = null
-      
-      for (const [otherFile, otherNodeId] of nodeByFile.entries()) {
-        if (otherFile === filePath) continue
-        const otherContent = fileContents.get(otherFile) || ''
-        const otherLanguage = getLanguage(otherFile)
-        const defs = extractDefinitions(otherContent, otherLanguage)
-        
-        const matches = defs.some(d => 
-          imp.includes(d.name) || d.name.includes(imp) || 
-          otherFile.includes(imp.replace(/\./g, '/')) ||
-          imp.includes(otherFile.replace(/\//g, '.').replace(/\.(ts|js|py|go|rs|java)$/, ''))
-        )
-        
-        if (matches) {
-          targetId = otherNodeId
-          break
-        }
-      }
+      // O(1) lookup via definition index instead of O(n) scan
+      const targetFile = resolveImport(imp, defIndex, filePath)
+      const targetId = targetFile ? nodeByFile.get(targetFile) : null
 
       if (targetId && targetId !== node.id) {
         const edgeId = `edge__${node.id}__${targetId}`
-        if (!edges.some(e => e.id === edgeId)) {
+        if (!edgeSet.has(edgeId)) {
+          edgeSet.add(edgeId)
           edges.push({
             id: edgeId,
             source: node.id,
@@ -555,10 +607,12 @@ function buildEdges(nodes, fileContents) {
     }
   }
 
+  // Architecture edges (parent-child)
   for (const node of nodes) {
     if (node.parentId && node.type !== 'layer') {
       const edgeId = `edge__${node.parentId}__${node.id}`
-      if (!edges.some(e => e.id === edgeId)) {
+      if (!edgeSet.has(edgeId)) {
+        edgeSet.add(edgeId)
         edges.push({
           id: edgeId,
           source: node.parentId,
@@ -575,9 +629,6 @@ function buildEdges(nodes, fileContents) {
   return edges
 }
 
-/* detectRole, detectPatterns, detectArchitecturalPattern removed — 
-   these are heuristic/LLM tasks that the agent performs based on RawAnalysis */
-
 function hashFileTree(paths) {
   const sorted = [...paths].sort().join('|')
   let hash = 0
@@ -588,6 +639,8 @@ function hashFileTree(paths) {
   }
   return Math.abs(hash).toString(16)
 }
+
+// ── Main entry point ────────────────────────────────────────
 
 export async function analyzeRepository(input) {
   const { repoUrl, localPath, githubToken, resumeFrom, outputFile } = input
@@ -636,16 +689,33 @@ export async function analyzeRepository(input) {
       fileContents.set(path, content)
     }
   } else {
-    for (const path of pass1.relevantFiles) {
+    // Batch process file reading to avoid blocking
+    const fileList = pass1.relevantFiles
+    console.log(`[analyzer] Reading ${fileList.length} files in batches of ${BATCH_SIZE}...`)
+    
+    await batchProcess(fileList, async (path) => {
       const content = await fetchFileContent(path)
+      return { path, content }
+    })
+    
+    // Actually populate the Map
+    const results = await batchProcess(fileList, async (path) => {
+      const content = await fetchFileContent(path)
+      return { path, content }
+    })
+    
+    for (const { path, content } of results) {
       fileContents.set(path, content)
     }
   }
 
   const nodes = buildNodesFromModules(pass1.tentativeModules, fileContents)
-  const edges = buildEdges(nodes, fileContents)
+  console.log(`[analyzer] Built ${nodes.length} nodes, resolving edges with indexed definitions...`)
+  
+  const edges = buildEdgesOptimized(nodes, fileContents)
+  console.log(`[analyzer] Built ${edges.length} edges`)
 
-  // Build file-level data so the agent can reason about roles/patterns without reading source code
+  // Build file-level data
   const fileData = {}
   for (const filePath of pass1.relevantFiles) {
     const content = fileContents.get(filePath) || ''
