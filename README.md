@@ -1,8 +1,8 @@
 # RepoMap — Skill edition
 
-[![Watch the demo](https://img.shields.io/badge/YouTube-Watch_demo-red?logo=youtube)](https://youtu.be/pEt4R_vPp5Q)
+[![Watch the demo](https://img.shields.io/badge/YouTube-Watch_demo-red?logo=youtube)](https://youtu.be/EdsugA9Tz8Y)
 
-An [opencode](https://github.com/ssturdevant/opencode) skill that generates architectural maps of repositories as interactive, editable graphs. The skill uses a **two-phase pipeline**: a deterministic analyzer extracts raw structural data (zero LLM tokens spent on code reading), and the calling agent enriches it with semantic interpretation via a single LLM call.
+An opencode or claude skill that generates architectural maps of repositories as interactive, editable graphs. The skill uses a **two-phase pipeline**: a deterministic analyzer extracts raw structural data (zero LLM tokens spent on code reading), and the calling agent enriches it with semantic interpretation via a single LLM call.
 
 > **🛈 Note:** The `main` branch contains the previous standalone web application version (Next.js + AI SDK). The main branch is the skill edition.
 
