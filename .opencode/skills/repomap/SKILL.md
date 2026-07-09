@@ -133,7 +133,10 @@ The deterministric analysis produces a `RawAnalysis` JSON object:
       "imports": ["fastapi", "app.services.users"],
       "definitions": [
         { "name": "router", "type": "const" },
-        { "name": "get_users", "type": "function" }
+        { "name": "get_users", "type": "function",
+          "params": [{ "name": "user_id", "type": "int" }, { "name": "limit", "type": "int", "optional": true }],
+          "returns": "list[User]"
+        }
       ]
     }
   },
@@ -148,11 +151,26 @@ The deterministric analysis produces a `RawAnalysis` JSON object:
 }
 ```
 
+## Function signature extraction
+
+The analyzer extracts function/method signatures from source code deterministically (regex, no LLM):
+
+| Convention | Languages |
+|---|---|
+| `name: type` | TypeScript, JavaScript, Python, Rust, Swift, PHP, Ruby |
+| `name type` | Go |
+| `type name` | Java, C#, C++, Dart, Kotlin, Scala |
+
+Fields per definition: `params: [{ name, type?, optional? }]`, `returns: string | undefined`
+
+No external dependencies beyond `glob`.
+
 ## LLM Enrichment (Agent Step)
 
 The `RawAnalysis` is meant to be fed to an LLM (without sending source code) to
-produce the semantic interpretation. Build a prompt with the module/file/import
-data and request:
+produce the semantic interpretation. The agent now receives **full function signatures**
+(params + return types), giving richer context for role assignment and pattern detection
+without any extra token cost. Build a prompt with the module/file/import data and request:
 
 - **Module roles**: For each module, pick from:
   `presentation`, `api_gateway`, `business_logic`, `data_access`, `authentication`,

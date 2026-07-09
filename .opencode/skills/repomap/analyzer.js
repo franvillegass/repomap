@@ -5,7 +5,6 @@ import { fileURLToPath } from 'url'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
 
-// ── Config ──────────────────────────────────────────────────
 
 const LANGUAGE_EXTENSIONS = {
   '.ts': 'TypeScript', '.tsx': 'TypeScript',
@@ -54,10 +53,10 @@ const PROJECT_MARKERS = [
 
 const ENTRY_POINTS = new Set(['main.py', 'app.py', 'manage.py', 'index.js', 'index.ts', 'app.js', 'app.ts', 'main.js', 'main.ts'])
 const MAX_ENTRY_DEPTH = 2
-const MAX_FILE_SIZE = 500 * 1024 // 500KB - skip huge files
-const BATCH_SIZE = 50 // Process files in batches to avoid blocking
+const MAX_FILE_SIZE = 500 * 1024  
+const BATCH_SIZE = 50 
 
-// Pre-compiled ignore patterns for O(1) matching
+
 const IGNORE_PATTERNS = [
   'node_modules', 'dist', 'build', '.next', '.git', 'target', '__pycache__',
   '.pyc', '.min.js', '.min.css', 'coverage', '.nyc_output', 'vendor',
@@ -71,7 +70,7 @@ const IGNORE_REGEXES = IGNORE_PATTERNS.map(p => {
   return new RegExp(escaped, 'i')
 })
 
-// ── Project root detection ──────────────────────────────────
+
 
 function findProjectRoots(filePaths) {
   const dirSet = new Set()
@@ -141,7 +140,7 @@ function assignLayerModule(filePath, projectRoots) {
   }
 }
 
-// ── Optimized file filtering ────────────────────────────────
+
 
 function getLanguage(filePath) {
   const ext = extname(filePath).toLowerCase()
@@ -187,7 +186,7 @@ async function getLocalFileTree(rootPath) {
   return files.map(f => relative(rootPath, f).replace(/\\/g, '/')).sort()
 }
 
-// ── GitHub API (no octokit) ─────────────────────────────────
+
 
 function parseGithubUrl(url) {
   const match = url
@@ -238,11 +237,11 @@ async function fetchGitHubFileContent(owner, repo, path, token) {
   return Buffer.from(cleaned, 'base64').toString('utf-8')
 }
 
-// ── Import/Definition extraction ────────────────────────────
 
-// Cache compiled regexes per language
+
 const IMPORT_REGEX_CACHE = new Map()
 const DEF_REGEX_CACHE = new Map()
+const SIG_REGEX_CACHE = new Map()
 
 function getImportRegex(language) {
   if (IMPORT_REGEX_CACHE.has(language)) return IMPORT_REGEX_CACHE.get(language)
@@ -311,6 +310,167 @@ function getDefRegex(language) {
   return regexes
 }
 
+
+function getSignaturePatterns(language) {
+  if (SIG_REGEX_CACHE.has(language)) return SIG_REGEX_CACHE.get(language)
+  let patterns = []
+
+  if (language === 'TypeScript' || language === 'JavaScript') {
+    patterns = [
+
+      { re: /(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(((?:[^()]|\([^()]*\))*)\)\s*(?::\s*(\S[^\{;]*?))?(?=\s*[;\{])/g, nameG: 1, paramsG: 2, retG: 3 },
+
+      { re: /(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s+)?(?:function\s*)?\(((?:[^()]|\([^()]*\))*)\)\s*(?::\s*(\S[^=]*?))?\s*(?:=>|\{)/g, nameG: 1, paramsG: 2, retG: 3 },
+
+      { re: /(\w+)\s*\(((?:[^()]|\([^()]*\))*)\)\s*(?::\s*(\S[^\{;]*?))?(?=\s*[\{])/g, nameG: 1, paramsG: 2, retG: 3 },
+    ]
+  } else if (language === 'Python') {
+    patterns = [
+
+      { re: /(?:async\s+)?def\s+(\w+)\s*\(((?:[^()]|\([^()]*\))*)\)\s*(?:->\s*(\S[^:]*?))?(?=\s*:)/g, nameG: 1, paramsG: 2, retG: 3 },
+    ]
+  } else if (language === 'Go') {
+    patterns = [
+
+      { re: /func\s+(?:\w+\s+)?(\w+)\s*\(((?:[^()]|\([^()]*\))*)\)\s*(\([^()]*\)|\w+(?:\[\])?)?(?=\s*\{)/g, nameG: 1, paramsG: 2, retG: 3 },
+    ]
+  } else if (language === 'Rust') {
+    patterns = [
+
+      { re: /fn\s+(\w+)\s*(?:<[^>]*>)?\s*\(((?:[^()]|\([^()]*\))*)\)\s*(?:->\s*(\S[^\{]*?))?(?=\s*\{)/g, nameG: 1, paramsG: 2, retG: 3 },
+    ]
+  } else if (language === 'Java' || language === 'C#' || language === 'C++' || language === 'Kotlin' || language === 'Scala') {
+    patterns = [
+
+      { re: /(?:\w+\s+)*(?:static\s+)?(?:final\s+)?(?:abstract\s+)?(?:synchronized\s+)?(?:[\w<>\[\],\s]+)\s+(\w+)\s*\(((?:[^()]|\([^()]*\))*)\)\s*(?:throws\s+[\w,\s]+)?(?=\s*\{)/g, nameG: 1, paramsG: 2, retG: null },
+
+      { re: /(\w+)\s*\(((?:[^()]|\([^()]*\))*)\)\s*(?::\s*\w+(?:\s*,\s*\w+)*)?(?=\s*\{)/g, nameG: 1, paramsG: 2, retG: null },
+    ]
+  } else if (language === 'Ruby') {
+    patterns = [
+      { re: /def\s+(\w+)\s*\(((?:[^()]|\([^()]*\))*)\)/g, nameG: 1, paramsG: 2, retG: null },
+    ]
+  } else if (language === 'PHP') {
+    patterns = [
+      { re: /function\s+(\w+)\s*\(((?:[^()]|\([^()]*\))*)\)\s*(?::\s*(\S[^\{;]*?))?(?=\s*[\{;])/g, nameG: 1, paramsG: 2, retG: 3 },
+    ]
+  } else if (language === 'Swift') {
+    patterns = [
+      { re: /func\s+(\w+)\s*\(((?:[^()]|\([^()]*\))*)\)\s*(?:->\s*(\S[^\{]*?))?(?=\s*\{)/g, nameG: 1, paramsG: 2, retG: 3 },
+    ]
+  } else if (language === 'Dart') {
+    patterns = [
+      { re: /(\w+)\s*\(((?:[^()]|\([^()]*\))*)\)\s*(?::\s*(\S[^\{;]*?))?(?=\s*[\{=])/g, nameG: 1, paramsG: 2, retG: 3 },
+    ]
+  } else {
+
+    patterns = [
+      { re: /function\s+(\w+)\s*\(((?:[^()]|\([^()]*\))*)\)/g, nameG: 1, paramsG: 2, retG: null },
+    ]
+  }
+
+  SIG_REGEX_CACHE.set(language, patterns)
+  return patterns
+}
+
+function parseParamText(paramText) {
+  const t = paramText.trim()
+  if (!t) return null
+
+
+  const optional = /\?\s*$/.test(t) || /=\s*\S/.test(t)
+
+
+  let clean = t.replace(/=\s*.+$/, '').trim()
+
+
+  const colonMatch = clean.match(/^(\w+)\??\s*(?::\s*(.+))?$/)
+  if (colonMatch) {
+    return { name: colonMatch[1].replace(/\?$/, ''), type: colonMatch[2] ? colonMatch[2].trim() : undefined, optional }
+  }
+
+
+  const spaceMatch = clean.match(/^(\w+)\s+(\S[\s\S]*)$/)
+  if (spaceMatch) {
+    return { name: spaceMatch[1], type: spaceMatch[2].trim(), optional }
+  }
+
+  
+  const restMatch = clean.match(/^\.\.\.(\w+)$/)
+  if (restMatch) {
+    return { name: restMatch[1], type: '...rest', optional: false }
+  }
+
+
+  const nameMatch = clean.match(/^(\w+)$/)
+  if (nameMatch) {
+    return { name: nameMatch[1], optional }
+  }
+
+
+  return { name: clean.replace(/[^a-zA-Z0-9_]/g, '_') || '_param', type: undefined, optional }
+}
+
+function parseParams(paramsText, language) {
+  if (!paramsText || !paramsText.trim()) return []
+
+  const params = []
+
+  const parts = splitTopLevel(paramsText, ',')
+
+  for (const part of parts) {
+    const p = parseParamText(part)
+    if (p) params.push(p)
+  }
+  return params
+}
+
+function splitTopLevel(text, sep) {
+  const parts = []
+  let depth = 0
+  let start = 0
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i]
+    if (ch === '(' || ch === '[' || ch === '{') depth++
+    else if (ch === ')' || ch === ']' || ch === '}') depth--
+    else if (ch === sep && depth === 0) {
+      parts.push(text.slice(start, i))
+      start = i + 1
+    }
+  }
+  parts.push(text.slice(start))
+  return parts
+}
+
+
+function extractSignatures(content, language) {
+  const sigs = new Map()
+  const patterns = getSignaturePatterns(language)
+
+  for (const { re, nameG, paramsG, retG } of patterns) {
+    re.lastIndex = 0
+    let match
+    while ((match = re.exec(content)) !== null) {
+      const name = match[nameG]
+      if (!name) continue
+
+
+      if (/^(if|for|while|switch|catch|return|throw|else|import|export)$/.test(name)) continue
+
+      const paramsText = match[paramsG]
+      const returnType = retG ? (match[retG] || '').trim() : undefined
+
+      const params = parseParams(paramsText, language)
+
+      if (!sigs.has(name)) {
+        sigs.set(name, { params, returns: returnType || undefined })
+      }
+    }
+  }
+
+  return sigs
+}
+
 function extractImports(content, language) {
   const imports = []
   const regexes = getImportRegex(language)
@@ -364,12 +524,23 @@ function extractDefinitions(content, language) {
       defs.push({ name: match[1], type })
     }
   }
+
+  if (defs.some(d => d.type === 'function' || d.type === 'method')) {
+    const sigs = extractSignatures(content, language)
+    for (const def of defs) {
+      if ((def.type === 'function' || def.type === 'method') && sigs.has(def.name)) {
+        const sig = sigs.get(def.name)
+        def.params = sig.params
+        def.returns = sig.returns
+      }
+    }
+  }
+
   return defs
 }
 
-// ── Optimized node/edge building ────────────────────────────
 
-// Build a definition index: Map<defName, Set<filePath>> for O(1) lookup
+
 function buildDefinitionIndex(fileContents) {
   const index = new Map()
   for (const [filePath, content] of fileContents) {
@@ -386,9 +557,9 @@ function buildDefinitionIndex(fileContents) {
   return index
 }
 
-// Resolve an import to target file paths using the definition index
+
 function resolveImport(imp, defIndex, currentFile) {
-  // Try exact definition name match
+
   const exact = defIndex.get(imp.split('/').pop().split('.').pop())
   if (exact) {
     for (const file of exact) {
@@ -396,7 +567,7 @@ function resolveImport(imp, defIndex, currentFile) {
     }
   }
   
-  // Try path-based resolution
+
   const impPath = imp.replace(/\./g, '/')
   for (const [defName, files] of defIndex) {
     if (imp.includes(defName) || defName.includes(imp)) {
@@ -483,14 +654,14 @@ async function readFileContent(filePath) {
   }
 }
 
-// Batch-process async operations to avoid blocking
+
 async function batchProcess(items, processor, batchSize = BATCH_SIZE) {
   const results = []
   for (let i = 0; i < items.length; i += batchSize) {
     const batch = items.slice(i, i + batchSize)
     const batchResults = await Promise.all(batch.map(processor))
     results.push(...batchResults)
-    // Yield to event loop between batches
+
     if (i + batchSize < items.length) {
       await new Promise(r => setTimeout(r, 0))
     }
@@ -558,7 +729,7 @@ function buildNodesFromModules(tentativeModules, fileContents) {
 
 function buildEdgesOptimized(nodes, fileContents) {
   const edges = []
-  const edgeSet = new Set() // O(1) deduplication
+  const edgeSet = new Set()  
   const nodeByFile = new Map()
   const nodeById = new Map()
 
@@ -569,7 +740,6 @@ function buildEdgesOptimized(nodes, fileContents) {
     }
   }
 
-  // Build definition index for O(1) import resolution
   const defIndex = buildDefinitionIndex(fileContents)
 
   for (const node of nodes) {
@@ -585,7 +755,6 @@ function buildEdgesOptimized(nodes, fileContents) {
     const imports = extractImports(content, language)
 
     for (const imp of imports) {
-      // O(1) lookup via definition index instead of O(n) scan
       const targetFile = resolveImport(imp, defIndex, filePath)
       const targetId = targetFile ? nodeByFile.get(targetFile) : null
 
@@ -607,7 +776,6 @@ function buildEdgesOptimized(nodes, fileContents) {
     }
   }
 
-  // Architecture edges (parent-child)
   for (const node of nodes) {
     if (node.parentId && node.type !== 'layer') {
       const edgeId = `edge__${node.parentId}__${node.id}`
@@ -640,7 +808,6 @@ function hashFileTree(paths) {
   return Math.abs(hash).toString(16)
 }
 
-// ── Main entry point ────────────────────────────────────────
 
 export async function analyzeRepository(input) {
   const { repoUrl, localPath, githubToken, resumeFrom, outputFile } = input
@@ -689,7 +856,7 @@ export async function analyzeRepository(input) {
       fileContents.set(path, content)
     }
   } else {
-    // Batch process file reading to avoid blocking
+    
     const fileList = pass1.relevantFiles
     console.log(`[analyzer] Reading ${fileList.length} files in batches of ${BATCH_SIZE}...`)
     
@@ -698,7 +865,7 @@ export async function analyzeRepository(input) {
       return { path, content }
     })
     
-    // Actually populate the Map
+    
     const results = await batchProcess(fileList, async (path) => {
       const content = await fetchFileContent(path)
       return { path, content }
@@ -715,7 +882,7 @@ export async function analyzeRepository(input) {
   const edges = buildEdgesOptimized(nodes, fileContents)
   console.log(`[analyzer] Built ${edges.length} edges`)
 
-  // Build file-level data
+  
   const fileData = {}
   for (const filePath of pass1.relevantFiles) {
     const content = fileContents.get(filePath) || ''
