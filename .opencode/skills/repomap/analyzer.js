@@ -1,6 +1,7 @@
 import { glob } from 'glob'
 import { readFileSync, statSync, writeFileSync } from 'fs'
 import { join, relative, resolve, extname, basename, dirname } from 'path'
+import { execSync } from 'child_process'
 import { fileURLToPath } from 'url'
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url))
@@ -584,6 +585,8 @@ function resolveImport(imp, defIndex, currentFile) {
   return null
 }
 
+export { extractDefinitions, extractSignatures }
+
 function fileIncludesImp(imp, filePath) {
   const normalized = imp.replace(/\./g, '/')
   return filePath.includes(normalized)
@@ -925,4 +928,141 @@ export async function analyzeRepository(input) {
   }
 
   return raw
+}
+
+
+export function isGitRepo(rootPath) {
+  try {
+    execSync('git rev-parse --is-inside-work-tree', { cwd: rootPath, stdio: 'pipe', encoding: 'utf-8' })
+    return true
+  } catch {
+    return false
+  }
+}
+
+
+export function getLocalGitBranches(rootPath) {
+  try {
+    const output = execSync('git branch --format="%(refname:short)|%(HEAD)"', { cwd: rootPath, stdio: 'pipe', encoding: 'utf-8' })
+    const currentBranch = execSync('git rev-parse --abbrev-ref HEAD', { cwd: rootPath, stdio: 'pipe', encoding: 'utf-8' }).trim()
+    return output.trim().split('\n').filter(Boolean).map(line => {
+      const [name, head] = line.split('|')
+      return { name: name.trim(), current: name.trim() === currentBranch }
+    })
+  } catch {
+    return []
+  }
+}
+
+export function getLocalGitCommits(rootPath, maxCount = 30) {
+  try {
+    const log = execSync(
+      `git log --max-count=${maxCount} --format="COMMIT%H|%s|%an|%aI" --name-status`,
+      { cwd: rootPath, stdio: 'pipe', encoding: 'utf-8', maxBuffer: 10 * 1024 * 1024 }
+    )
+    return parseGitLog(log)
+  } catch {
+    return []
+  }
+}
+
+function parseGitLog(raw) {
+  const commits = []
+  let current = null
+  const lines = raw.split('\n')
+  for (const line of lines) {
+    if (line.startsWith('COMMIT')) {
+      if (current) commits.push(current)
+      const [hash, message, author, date] = line.slice(6).split('|')
+      current = { hash, message, author, date, files: [] }
+    } else if (current && line.trim()) {
+      const [status, ...pathParts] = line.trim().split('\t')
+      const path = pathParts.join('\t')
+      if (path && /^[AMDR]/.test(status)) {
+        current.files.push({
+          path,
+          status: status === 'A' ? 'added' : status === 'M' ? 'modified' : status === 'D' ? 'deleted' : 'modified',
+        })
+      }
+    }
+  }
+  if (current) commits.push(current)
+  return commits
+}
+
+
+export async function getGitHubBranches(owner, repo, token) {
+  const headers = { Accept: 'application/vnd.github.v3+json', 'User-Agent': 'repomap-analyzer' }
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  try {
+    const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/branches`, { headers })
+    if (!res.ok) return []
+    const data = await res.json()
+    const repoRes = await fetch(`https://api.github.com/repos/${owner}/${repo}`, { headers })
+    const defaultBranch = repoRes.ok ? (await repoRes.json()).default_branch : 'main'
+    return data.map(b => ({ name: b.name, current: b.name === defaultBranch }))
+  } catch {
+    return []
+  }
+}
+
+
+export async function getGitHubCommits(owner, repo, token, maxCount = 30) {
+  const headers = { Accept: 'application/vnd.github.v3+json', 'User-Agent': 'repomap-analyzer' }
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  try {
+    const res = await fetch(
+      `https://api.github.com/repos/${owner}/${repo}/commits?per_page=${Math.min(maxCount, 100)}`,
+      { headers }
+    )
+    if (!res.ok) return []
+    const commits = await res.json()
+
+    const results = []
+    for (const c of commits) {
+      const detailRes = await fetch(c.url, { headers })
+      if (!detailRes.ok) continue
+      const detail = await detailRes.json()
+      const files = (detail.files || []).map(f => ({
+        path: f.filename,
+        status: f.status === 'added' ? 'added' : f.status === 'removed' ? 'deleted' : 'modified',
+      }))
+      results.push({
+        hash: c.sha,
+        message: c.commit.message.split('\n')[0],
+        author: c.commit.author?.name || 'unknown',
+        date: c.commit.author?.date || c.commit.committer?.date || new Date().toISOString(),
+        files,
+      })
+    }
+    return results
+  } catch {
+    return []
+  }
+}
+
+export async function getGitData(input) {
+  const { localPath, repoUrl, githubToken, maxCommits = 30 } = input
+
+  if (localPath) {
+    if (!isGitRepo(localPath)) return null
+    const [branches, commits] = await Promise.all([
+      Promise.resolve(getLocalGitBranches(localPath)),
+      Promise.resolve(getLocalGitCommits(localPath, maxCommits)),
+    ])
+    return { branches, commits }
+  }
+
+  if (repoUrl) {
+    const parsed = parseGithubUrl(repoUrl)
+    if (!parsed) return null
+    const { owner, repo } = parsed
+    const [branches, commits] = await Promise.all([
+      getGitHubBranches(owner, repo, githubToken),
+      getGitHubCommits(owner, repo, githubToken, maxCommits),
+    ])
+    return { branches, commits }
+  }
+
+  return null
 }

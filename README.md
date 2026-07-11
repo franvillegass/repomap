@@ -20,7 +20,7 @@ An opencode or claude skill that generates architectural maps of repositories as
 The analyzer (`analyzer.js`) is a pure JavaScript module that never calls an LLM. It:
 
 - Scans the file tree (local or GitHub) respecting `.gitignore`
-- Extracts **imports** and **definitions** (function/class names + parameters) via regex
+- Extracts **imports** and **definitions** (function signatures with parameter names, types, and return types) via language-specific regex
 - Builds the directory hierarchy (layers → modules → files)
 - Computes import-based edges between modules
 
@@ -44,6 +44,7 @@ The `RepoGraph` is served by `@frannn2114/repomap-visual`, an npm package that p
 - **React Flow graph** with node inspection sidebar
 - **Alternative views**: onion rings, layer stack, clusters, pipeline flow
 - **Branch system**: explore alternative architectures without modifying the base graph — add/delete nodes and edges, create connections, all persisted in IndexedDB
+- **Git integration**: commits and branches from the repo appear in the sidebar; select a commit to see files colored by change status (🟢 added, 🟠 modified, 🔴 deleted)
 - **Viewport culling** for smooth performance on large graphs
 
 ## Skill structure
@@ -117,12 +118,14 @@ The deterministic analyzer extracts structured data (imports, definitions, direc
 ### What the analyzer does vs. what the agent does
 
 | Task | Done by | Why |
-|---|---|---|
+|---|---|---|---|
 | File scanning (glob, gitignore) | Analyzer | Deterministic, fast |
 | Import extraction | Analyzer | Regex, no intelligence needed |
 | Definition extraction | Analyzer | Regex, fast |
+| Function signature extraction | Analyzer | Regex per language — params + return types |
 | Directory structure | Analyzer | Deterministic |
 | Edge construction | Analyzer | Based on imports, no reasoning |
+| Git data extraction | Analyzer | Git log/diff + GitHub API — commits + branches |
 | Role assignment | Agent (LLM) | Requires semantic understanding |
 | Pattern detection | Agent (LLM) | Requires architectural reasoning |
 | Module labeling | Agent (LLM) | Human-readable descriptions |

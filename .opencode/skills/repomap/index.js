@@ -15,7 +15,7 @@ function rawToMinimalGraph(raw) {
     detectedRole: 'unknown',
     patterns: [],
   }))
-  return {
+  const graph = {
     meta: {
       ...raw.meta,
       detectedPattern: 'unknown',
@@ -26,6 +26,9 @@ function rawToMinimalGraph(raw) {
     edges: raw.edges,
     overlay: { version: 0, nodeOverrides: {}, edgeOverrides: {}, manualNodes: [], manualEdges: [] },
   }
+
+  if (raw.git) graph.git = raw.git
+  return graph
 }
 
 export async function analyze(input) {

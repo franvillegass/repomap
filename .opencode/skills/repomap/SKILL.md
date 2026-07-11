@@ -165,6 +165,23 @@ Fields per definition: `params: [{ name, type?, optional? }]`, `returns: string 
 
 No external dependencies beyond `glob`.
 
+## Git data (optional pipeline step)
+
+If the repository is a git repo (local or GitHub), the analyzer can extract branches and commits:
+
+1. The agent **asks the user** how many commits to include (configurable, default 30).
+2. If `maxCommits > 60`, the agent must ask the user for a GitHub token (API rate limit: 60 req/h without token, 5000/h with token).
+3. The agent calls `getGitData({ localPath, repoUrl, githubToken, maxCommits })` which returns `{ branches: [{ name, current }], commits: [{ hash, message, author, date, files: [{ path, status }] }] }` or `null` if not a git repo.
+4. The agent adds the returned data as a `git` field in the final `RepoGraph` JSON.
+5. The visualizer shows commits in a sidebar tab. Selecting a commit renders the graph with file nodes colored by change status (🟢 added, 🟠 modified, 🔴 deleted). Branches appear in the Branches tab under "Repository branches".
+
+**Agent workflow for this step:**
+```
+if (gitData) {
+  graph.git = gitData
+}
+```
+
 ## LLM Enrichment (Agent Step)
 
 The `RawAnalysis` is meant to be fed to an LLM (without sending source code) to
