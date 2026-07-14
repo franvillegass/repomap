@@ -40,23 +40,29 @@ use an LLM call to enrich it with semantic interpretation (roles, patterns, labe
 At least one of `localPath` or `repoUrl` must be provided.
 
 **How to execute:**
-1. Import and call `analyzeRepository` from `./analyzer.js`:
-   ```js
-   import { analyzeRepository } from './analyzer.js'
-   const raw = await analyzeRepository({ localPath, repoUrl, githubToken, resumeFrom, outputFile })
-   ```
-2. The `raw` object contains `modules`, `fileData`, `nodes`, `edges`, and `meta`.
-3. Build an LLM prompt that sends the module/file/import data (NOT the full source code)
-   and asks the model to:
-   - Assign a `detectedRole` to each module (presentation, api_gateway, business_logic,
-     data_access, authentication, configuration, utility, testing, middleware, messaging,
-     caching, background_jobs, security, observability, database_migration, unknown)
-   - Detect intra-module patterns (repository_pattern, factory_pattern, etc.)
-   - Determine the overall architectural pattern and pick a layout template:
-     `vertical_layers` | `horizontal_three_column` | `concentric_rings` |
-     `left_right_flow` | `grid_clusters` | `force_directed`
-   - Optionally improve module labels for readability.
-4. Merge the LLM output into the final `RepoGraph`:
+1. **Before starting the analysis, the agent MUST ask the user:**
+   "Do you want to include git data (branches and commits) in the repository map?"
+   - If yes, follow the [Git data pipeline](#git-data-optional-pipeline-step) section below
+     (ask for commit count, collect token if needed, then call `getGitData`).
+   - If no, proceed without git data.
+   - **Do not skip this question.** The agent must ask before calling the analyzer.
+2. Import and call `analyzeRepository` from `./analyzer.js`:
+    ```js
+    import { analyzeRepository } from './analyzer.js'
+    const raw = await analyzeRepository({ localPath, repoUrl, githubToken, resumeFrom, outputFile })
+    ```
+3. The `raw` object contains `modules`, `fileData`, `nodes`, `edges`, and `meta`.
+4. Build an LLM prompt that sends the module/file/import data (NOT the full source code)
+    and asks the model to:
+    - Assign a `detectedRole` to each module (presentation, api_gateway, business_logic,
+      data_access, authentication, configuration, utility, testing, middleware, messaging,
+      caching, background_jobs, security, observability, database_migration, unknown)
+    - Detect intra-module patterns (repository_pattern, factory_pattern, etc.)
+    - Determine the overall architectural pattern and pick a layout template:
+      `vertical_layers` | `horizontal_three_column` | `concentric_rings` |
+      `left_right_flow` | `grid_clusters` | `force_directed`
+    - Optionally improve module labels for readability.
+5. Merge the LLM output into the final `RepoGraph`:
    ```js
    const nodesWithRoles = raw.nodes.map(node => ({
      ...node,
@@ -75,7 +81,13 @@ At least one of `localPath` or `repoUrl` must be provided.
      overlay: { version: 0, nodeOverrides: {}, edgeOverrides: {}, manualNodes: [], manualEdges: [] },
    }
    ```
-5. Return the final `RepoGraph` to the user.
+6. Add the `git` field if the user opted in (step 1):
+    ```js
+    if (gitData) {
+      graph.git = gitData
+    }
+    ```
+7. Return the final `RepoGraph` to the user.
 
 ### serve
 
@@ -89,16 +101,23 @@ a temp file, and gives the user the npx command to start the visual server.
 - `port` (number, optional, default 3000) — Port for the server
 
 **How to execute:**
+0. **Before starting the analysis, the agent MUST ask the user:**
+   "Do you want to include git data (branches and commits) in the repository map?"
+   - If yes, follow the [Git data pipeline](#git-data-optional-pipeline-step) section
+     below (ask for commit count, collect token if needed, then call `getGitData`).
+   - If no, proceed without git data.
+   - **Do not skip this question.** The agent must ask before calling the analyzer.
 1. Analyze the repository using the analyzer (same as `analyze` action)
 2. Convert `raw` to a `RepoGraph` (the serve action in index.js does this automatically
-   with default role/pattern values; you may optionally enrich via LLM first for a
-   better visual result)
-3. Write the graph JSON to a temp file then show the user the command to run the
-   server themselves, so the agent stays responsive:
-   ```bash
-   npx @frannn2114/repomap-visual serve /path/to/repomap-<timestamp>.json --port=3000
-   ```
-4. Tell the user the server URL will be `http://localhost:3000` once they run the command
+    with default role/pattern values; you may optionally enrich via LLM first for a
+    better visual result)
+3. If the user opted in for git data, add `graph.git = gitData`
+4. Write the graph JSON to a temp file then show the user the command to run the
+    server themselves, so the agent stays responsive:
+    ```bash
+    npx @frannn2114/repomap-visual serve /path/to/repomap-<timestamp>.json --port=3000
+    ```
+5. Tell the user the server URL will be `http://localhost:3000` once they run the command
 
 ## RawAnalysis JSON Format
 
@@ -167,7 +186,9 @@ No external dependencies beyond `glob`.
 
 ## Git data (optional pipeline step)
 
-If the repository is a git repo (local or GitHub), the analyzer can extract branches and commits:
+The agent must ask the user **before analyzing** whether they want git data (see `analyze`/`serve` actions above).
+
+If the user says yes, follow this workflow:
 
 1. The agent **asks the user** how many commits to include (configurable, default 30).
 2. If `maxCommits > 60`, the agent must ask the user for a GitHub token (API rate limit: 60 req/h without token, 5000/h with token).

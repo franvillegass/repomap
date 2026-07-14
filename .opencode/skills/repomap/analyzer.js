@@ -576,9 +576,9 @@ function resolveImport(imp, defIndex, currentFile) {
         if (file !== currentFile) return file
       }
     }
-    if (impPath && fileIncludesImp(imp, file)) {
+    if (impPath) {
       for (const file of files) {
-        if (file !== currentFile && file.includes(impPath)) return file
+        if (file !== currentFile && (file.includes(impPath) || defName.toLowerCase().includes(imp.toLowerCase()))) return file
       }
     }
   }
