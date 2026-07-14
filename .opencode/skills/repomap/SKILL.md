@@ -91,8 +91,9 @@ At least one of `localPath` or `repoUrl` must be provided.
 
 ### serve
 
-Analyzes a repository, converts the raw analysis to a basic RepoGraph, writes it to
-a temp file, and gives the user the npx command to start the visual server.
+Analyzes a repository, persists the RepoGraph to `~/.repomap/maps/`, and starts
+the visual server. Maps are stored persistently and can be re-opened later via
+`open` or the CLI.
 
 **Input:**
 - `localPath` (string, optional) — Path to a local repository
@@ -107,17 +108,40 @@ a temp file, and gives the user the npx command to start the visual server.
      below (ask for commit count, collect token if needed, then call `getGitData`).
    - If no, proceed without git data.
    - **Do not skip this question.** The agent must ask before calling the analyzer.
-1. Analyze the repository using the analyzer (same as `analyze` action)
-2. Convert `raw` to a `RepoGraph` (the serve action in index.js does this automatically
-    with default role/pattern values; you may optionally enrich via LLM first for a
-    better visual result)
-3. If the user opted in for git data, add `graph.git = gitData`
-4. Write the graph JSON to a temp file then show the user the command to run the
-    server themselves, so the agent stays responsive:
-    ```bash
-    npx @frannn2114/repomap-visual serve /path/to/repomap-<timestamp>.json --port=3000
-    ```
-5. Tell the user the server URL will be `http://localhost:3000` once they run the command
+1. Call `serve(input)`. It analyzes, persists to `~/.repomap/maps/`, and starts
+   the visual server automatically.
+2. Inform the user the server is running at `http://localhost:<port>`.
+3. Optionally tell the user they can reopen this map later via the CLI:
+   ```
+   node cli.js open <repoName>
+   ```
+
+### list
+
+Returns a list of all saved maps with metadata (name, date, node count, etc.).
+
+**How to execute:**
+```js
+import { list } from './index.js'
+const maps = list()
+// maps = [{ name, repoName, createdAt, detectedPattern, nodeCount, fileName }]
+```
+
+### open
+
+Opens a previously saved map by name (repo name, partial match, or file name)
+and starts the visual server. If no name is given, opens the most recent map.
+
+**Input:**
+- `name` (string, optional) — Repo name, file name, or partial match
+- `port` (number, optional, default 3000) — Port for the server
+
+**How to execute:**
+```js
+import { open } from './index.js'
+const result = await open({ name: 'my-project' })
+// result = { url, pid, mapPath } or { error, matches? }
+```
 
 ## RawAnalysis JSON Format
 
@@ -263,3 +287,17 @@ Merge the LLM response into the final `RepoGraph` with this structure:
 ### Confidence Levels
 
 `high`, `medium`, `uncertain`
+
+## CLI (standalone)
+
+A standalone CLI script lets users browse and open saved maps without the agent:
+
+```bash
+# List all saved maps
+node .opencode/skills/repomap/cli.js list
+
+# Open a map by name (repo name, partial match, or file name)
+node .opencode/skills/repomap/cli.js open my-project
+```
+
+Maps are stored persistently at `~/.repomap/maps/` with an index at `~/.repomap/index.json`.
