@@ -6,6 +6,8 @@ An opencode or claude skill that generates architectural maps of repositories as
 
 > **🛈 Note:** The `main` branch contains the previous standalone web application version (Next.js + AI SDK). The main branch is the skill edition.
 
+![Demo](assets/repomap.png)
+
 ## How it works
 
 ```
@@ -76,10 +78,11 @@ const raw = await analyzeRepository({
 
 ### `serve`
 
-Analyzes + shows the user the npx command to start the visual server:
+Analyzes a repository, persists the map to `~/.repomap/maps/`, and starts the visual server.
 
 ```bash
-npx @frannn2114/repomap-visual serve /tmp/repomap-<timestamp>.json --port=3000
+# The agent does this automatically; the map is saved for later reuse
+node .opencode/skills/repomap/cli.js open <repo-name>  # reopen anytime
 ```
 
 ## RepoGraph JSON format
@@ -147,6 +150,17 @@ npm install
 ```
 
 Then use the repomap skill within opencode — the agent will call `analyze()` or `serve()` as needed.
+
+## CLI & persistent storage
+
+Every map generated via `serve()` is saved to `~/.repomap/maps/` with metadata in `~/.repomap/index.json`. Use the CLI to reopen maps without the agent:
+
+```bash
+node .opencode/skills/repomap/cli.js list        # list saved maps
+node .opencode/skills/repomap/cli.js open <name>  # open a map by repo name
+```
+
+Maps persist indefinitely — reopen them days later without re-analyzing.
 
 ## npm package
 
