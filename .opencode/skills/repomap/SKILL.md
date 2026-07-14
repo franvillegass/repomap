@@ -288,6 +288,29 @@ Merge the LLM response into the final `RepoGraph` with this structure:
 
 `high`, `medium`, `uncertain`
 
+## Git branch diff
+
+If the map was generated with git data (`graph.git.branches`), the visualizer shows
+a "Repository branches" section in the sidebar. Clicking a branch:
+
+1. Fetches `git diff --name-status` from the server (`/api/diff`)
+2. Highlights changed nodes with colored borders (🟢 added, 🟠 modified, 🔴 deleted)
+3. Shows a warning banner: "Diff only — ask agent for full analysis"
+
+**Server must be started with `--repo=<path>` for diff support:**
+```bash
+npx @frannn2114/repomap-visual serve graph.json --port=3000 --repo=/path/to/repo
+```
+
+**For a full architectural map of a branch, ask the agent:**
+```
+"Analyze branch feature/auth of the repo and add it to the map"
+```
+The agent will:
+1. Run `analyzeRepository()` on that branch
+2. Enrich with LLM (roles, patterns)
+3. Update the existing `~/.repomap/` JSON with the new branch data
+
 ## CLI (standalone)
 
 A standalone CLI script lets users browse and open saved maps without the agent:

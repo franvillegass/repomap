@@ -38,9 +38,11 @@ function sanitizeName(name) {
 }
 
 
-function spawnServer({ filePath, port = 3000, timeout = 20000 } = {}) {
+function spawnServer({ filePath, port = 3000, timeout = 20000, repoPath } = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn('npx', ['@frannn2114/repomap-visual', 'serve', filePath, `--port=${port}`], {
+    const args = ['@frannn2114/repomap-visual', 'serve', filePath, `--port=${port}`]
+    if (repoPath) args.push(`--repo=${repoPath}`)
+    const child = spawn('npx', args, {
       stdio: ['ignore', 'pipe', 'pipe'],
     })
 
@@ -136,11 +138,12 @@ export async function serve(input) {
     filePath,
     createdAt: new Date().toISOString(),
     repoUrl: graph.meta.repoUrl || '',
+    localPath: input.localPath || '',
     detectedPattern: graph.meta.detectedPattern || '',
     nodeCount: graph.nodes.length,
   })
 
-  const { pid, url } = await spawnServer({ filePath, port })
+  const { pid, url } = await spawnServer({ filePath, port, repoPath: input.localPath })
   return { pid, url }
 }
 
@@ -180,8 +183,10 @@ export async function open({ name, port = 3000 } = {}) {
   if (!entry) return { error: `No map found matching "${name}"` }
   if (!existsSync(entry.filePath)) return { error: `Map file not found: ${entry.filePath}` }
 
+  const repoPath = entry.localPath || entry.repoUrl?.replace(/^local:\/\//, '') || undefined
+
   try {
-    const child = await spawnServer({ filePath: entry.filePath, port })
+    const child = await spawnServer({ filePath: entry.filePath, port, repoPath })
     return { ...child, mapPath: entry.filePath }
   } catch (err) {
     return { error: `Failed to start visual server: ${err.message}` }
