@@ -1,175 +1,227 @@
-# RepoMap — Skill edition
+RepoMap
+
+Give coding agents architectural awareness.
+
+RepoMap extracts the structure of any repository without sending source code to an LLM, then generates an interactive architectural map that both humans and AI agents can understand.
 
 [![Watch the demo](https://img.shields.io/badge/YouTube-Watch_demo-red?logo=youtube)](https://youtu.be/EdsugA9Tz8Y)
 
-An opencode or claude skill that generates architectural maps of repositories as interactive, editable graphs. The skill uses a **two-phase pipeline**: a deterministic analyzer extracts raw structural data (zero LLM tokens spent on code reading), and the calling agent enriches it with semantic interpretation via a single LLM call.
+[![RepoMap demo screenshot](assets/repomap.png)](https://youtu.be/EdsugA9Tz8Y)
 
-> **🛈 Note:** The `main` branch contains the previous standalone web application version (Next.js + AI SDK). The main branch is the skill edition.
+Why RepoMap?
 
-![Demo](assets/repomap.png)
+Modern coding agents spend a significant amount of time reconstructing a project's architecture.
 
-## How it works
+They repeatedly open files, follow imports, inspect folders, and consume thousands of tokens just to answer questions like:
 
-```
-┌─────────────┐     ┌──────────────┐     ┌─────────────┐     ┌──────────────┐
-│  analyzer   │ ──▶│  RawAnalysis  │ ──▶│  Agent (LLM)│ ──▶│  RepoGraph   │ ──▶ visual server
-│ (deterministic)   │ (structured data)  │ (semantic)  │     │  (JSON)      │
-└─────────────┘     └──────────────┘     └─────────────┘     └──────────────┘
-```
+Where is authentication implemented?
+Which modules depend on the database?
+What architectural pattern does this project follow?
+How are components connected?
 
-### Phase 1 — Analyzer (deterministic, no LLM)
+RepoMap changes that workflow.
 
-The analyzer (`analyzer.js`) is a pure JavaScript module that never calls an LLM. It:
+Instead of asking the LLM to rediscover the architecture every session, RepoMap builds a deterministic structural representation once and lets the agent reason over that representation.
 
-- Scans the file tree (local or GitHub) respecting `.gitignore`
-- Extracts **imports** and **definitions** (function signatures with parameter names, types, and return types) via language-specific regex
-- Builds the directory hierarchy (layers → modules → files)
-- Computes import-based edges between modules
+The result is:
 
-This produces a `RawAnalysis` — a compact JSON object (~10 KB even for large repos) containing module summaries, file-level data, and structural connections. The agent **never reads source code directly**, saving thousands of tokens.
+significantly fewer tokens spent on repository understanding
+faster architectural reasoning
+interactive visualization for humans
+reusable architecture data for AI agents
+Features
 
-### Phase 2 — Agent enrichment (LLM, one call)
+✅ Deterministic repository analysis
 
-The calling agent receives the `RawAnalysis` and builds a single prompt that asks the LLM to:
+✅ Zero source code sent to the LLM
 
-- Assign an architectural **role** to each module (presentation, api_gateway, business_logic, data_access, etc.)
-- Detect the overall **architectural pattern** (layered_monolith, hexagonal, mvc, microservices, etc.)
-- Pick a **layout template** for the visualizer
-- Optionally improve module labels for readability
+✅ Interactive architecture graph
 
-The LLM produces the completed `RepoGraph` JSON.
+✅ Automatic architectural role detection
 
-### Phase 3 — Visualization
+✅ Architecture pattern recognition
 
-The `RepoGraph` is served by `@frannn2114/repomap-visual`, an npm package that provides:
+✅ Multiple graph layouts
 
-- **React Flow graph** with node inspection sidebar
-- **Alternative views**: onion rings, layer stack, clusters, pipeline flow
-- **Branch system**: explore alternative architectures without modifying the base graph — add/delete nodes and edges, create connections, all persisted in IndexedDB
-- **Git integration**: commits and branches from the repo appear in the sidebar; select a commit to see files colored by change status (🟢 added, 🟠 modified, 🔴 deleted)
-- **Viewport culling** for smooth performance on large graphs
+✅ Editable graphs with persistent branches
 
-## Skill structure
+✅ Git history visualization
+
+✅ Large repository support
+
+How it works
+
+RepoMap separates structure extraction from architectural reasoning.
 
 ```
-.opencode/skills/repomap/
-├── SKILL.md          # Skill instructions for the calling agent
-├── index.js          # Entry point: analyze() and serve()
-├── analyzer.js       # Deterministic scanner (Phase 1)
-├── package.json      # Dependencies (glob)
-└── node_modules/
+Repository
+     │
+     ▼
+Deterministic Analyzer
+     │
+     ▼
+RawAnalysis
+(no source code)
+     │
+     ▼
+LLM
+(architecture reasoning)
+     │
+     ▼
+RepoGraph
+     │
+     ▼
+Interactive visualization
 ```
+Phase 1 — Deterministic Analysis
 
-## Actions
+The analyzer never calls an LLM.
 
-### `analyze`
+It scans the repository and extracts:
 
-Analyzes a repository locally or via GitHub and returns a `RawAnalysis`.
+directory hierarchy
+imports
+function signatures
+module relationships
+git information
 
-```js
-import { analyzeRepository } from './analyzer.js'
-const raw = await analyzeRepository({
-  localPath: '/path/to/repo',
-  // or: repoUrl: 'https://github.com/owner/repo',
-  // githubToken: 'ghp_...',
-})
-// raw = { meta, modules, fileData, nodes, edges }
-```
+The result is a compact RawAnalysis that describes the repository structure without exposing the source code.
 
-### `serve`
+Phase 2 — Architectural Reasoning
 
-Analyzes a repository, persists the map to `~/.repomap/maps/`, and starts the visual server.
+Instead of reading thousands of files, the LLM receives only the structured analysis.
+
+From that information it can:
+
+assign architectural roles
+identify architectural patterns
+improve module labels
+generate a visualization layout
+
+Only one reasoning step is required.
+
+Phase 3 — Interactive Exploration
+
+RepoMap renders the generated architecture as an editable graph.
+
+Features include:
+
+React Flow visualization
+multiple layouts
+branch-based editing
+node inspection
+viewport culling
+persistent local storage
+Git-aware visualization
+
+Architecture is not static.
+
+RepoMap lets you explore repositories together with their Git history.
+
+inspect commits
+browse branches
+highlight added files
+highlight modified files
+highlight deleted files
+
+Future versions will expand this into full architectural diff visualization.
+
+Why not let the LLM read the repository?
+
+Because repository exploration is mostly deterministic.
+
+Finding imports, discovering modules, following folders and extracting definitions does not require intelligence.
+
+LLMs should spend their context reasoning about architecture—not reconstructing information that software can extract automatically.
+
+This dramatically reduces token usage while producing a richer architectural representation.
+
+Designed for coding agents
+
+RepoMap was built to integrate naturally with tools such as OpenCode and Claude.
+
+Instead of repeatedly exploring the repository, agents receive a compact structural model that can be reused for reasoning, visualization and future analysis.
+
+Installation
 
 ```bash
-# The agent does this automatically; the map is saved for later reuse
-node .opencode/skills/repomap/cli.js open <repo-name>  # reopen anytime
-```
-
-## RepoGraph JSON format
-
-```jsonc
-{
-  "meta": {
-    "repoUrl": "local://my-project",
-    "repoName": "my-project",
-    "detectedPattern": "layered_monolith",
-    "layoutTemplate": "vertical_layers",
-    "patternConfidence": 0.85
-  },
-  "nodes": [
-    { "id": "layer__backend", "label": "Backend", "type": "layer", "depth": 0,
-      "files": [], "detectedRole": "", "patterns": [], "metadata": {} },
-    { "id": "module__api", "label": "Api", "type": "module", "depth": 1,
-      "parentId": "layer__backend", "files": ["backend/api/routes.py"],
-      "detectedRole": "api_gateway", "patterns": [], "metadata": {} }
-  ],
-  "edges": [
-    { "id": "edge_1", "source": "module__api", "target": "module__services",
-      "edgeType": "engineering", "strength": 3, "confidence": "high" }
-  ],
-  "overlay": { "version": 0, "nodeOverrides": {}, "edgeOverrides": {},
-    "manualNodes": [], "manualEdges": [] }
-}
-```
-
-## Design decisions
-
-### Why the agent never reads source code
-
-The deterministic analyzer extracts structured data (imports, definitions, directory structure) without any LLM involvement. The agent receives a compact `RawAnalysis` and reasons about architecture using only this metadata — not raw source files. On a typical repo of 200 files, this saves ~95% of the tokens compared to feeding file contents to the LLM.
-
-### What the analyzer does vs. what the agent does
-
-| Task | Done by | Why |
-|---|---|---|---|
-| File scanning (glob, gitignore) | Analyzer | Deterministic, fast |
-| Import extraction | Analyzer | Regex, no intelligence needed |
-| Definition extraction | Analyzer | Regex, fast |
-| Function signature extraction | Analyzer | Regex per language — params + return types |
-| Directory structure | Analyzer | Deterministic |
-| Edge construction | Analyzer | Based on imports, no reasoning |
-| Git data extraction | Analyzer | Git log/diff + GitHub API — commits + branches |
-| Role assignment | Agent (LLM) | Requires semantic understanding |
-| Pattern detection | Agent (LLM) | Requires architectural reasoning |
-| Module labeling | Agent (LLM) | Human-readable descriptions |
-
-### Why file-level nodes are hidden in the graph
-
-The visualizer only shows **layer** and **module** nodes by default. Individual files are accessible by expanding a module — this keeps the graph clean and performant (from ~6000 nodes to ~200 nodes for large repos).
-
-## Getting started
-
-```bash
-# Clone
 git clone <repo-url>
 cd repomap-pipeline-v2
-
-# Install skill dependencies
-cd .opencode/skills/repomap
 npm install
 ```
 
-Then use the repomap skill within opencode — the agent will call `analyze()` or `serve()` as needed.
+The skill is auto-discovered by OpenCode from `.opencode/skills/repomap/`.
 
-## CLI & persistent storage
-
-Every map generated via `serve()` is saved to `~/.repomap/maps/` with metadata in `~/.repomap/index.json`. Use the CLI to reopen maps without the agent:
+Quick Start
 
 ```bash
-node .opencode/skills/repomap/cli.js list        # list saved maps
-node .opencode/skills/repomap/cli.js open <name>  # open a map by repo name
+# Analyze a local repository and serve the interactive map
+node .opencode/skills/repomap/cli.js open my-repo
+
+# Or from code:
+import { analyze } from './.opencode/skills/repomap/index.js'
+const raw = await analyze({ localPath: '/path/to/repo' })
 ```
-
-Maps persist indefinitely — reopen them days later without re-analyzing.
-
-## npm package
-
-The visual server is published as [`@frannn2114/repomap-visual`](https://www.npmjs.com/package/@frannn2114/repomap-visual) on npm. It provides the React Flow graph, alternative views, branch system, and Express+Vite server.
 
 ```bash
-npx @frannn2114/repomap-visual serve graph.json --port=3000
+# List all saved maps
+node .opencode/skills/repomap/cli.js list
 ```
 
-## License
+RepoGraph format
 
-MIT
+```json
+{
+  "meta": {
+    "repoName": "owner/repo",
+    "estimatedSize": "small|medium|large",
+    "languages": ["TypeScript", "Python"],
+    "totalFiles": 42,
+    "totalModules": 8
+  },
+  "nodes": [
+    { "id": "layer__src", "label": "Src", "type": "layer", "parentId": null, "files": [], "metadata": {} },
+    { "id": "module__src_core", "label": "Core", "type": "module", "parentId": "layer__src", "files": ["core/index.ts"], "metadata": {} },
+    { "id": "file__core_index_ts", "label": "index.ts", "type": "file", "parentId": "module__src_core", "files": ["core/index.ts"], "metadata": { "language": "TypeScript", "lineCount": 150, "complexity": "medium" } }
+  ],
+  "edges": [
+    { "id": "edge__file1__file2", "source": "file__core_index_ts", "target": "file__utils_helpers_ts", "edgeType": "engineering", "strength": 3, "label": "imports", "confidence": "high" },
+    { "id": "edge__layer__module", "source": "layer__src", "target": "module__src_core", "edgeType": "architecture", "strength": 5, "label": "contains", "confidence": "high" }
+  ],
+  "overlay": {
+    "version": 0,
+    "nodeOverrides": {},
+    "edgeOverrides": {},
+    "manualNodes": [],
+    "manualEdges": []
+  }
+}
+```
+
+CLI
+
+```
+node cli.js list              List all saved maps
+node cli.js open <name>       Open a map by name, file name, or partial match
+```
+
+All commands run from `.opencode/skills/repomap/`.
+
+Architecture
+
+```
+.opencode/skills/repomap/
+  analyzer.js     Deterministic scanner: file tree, imports, definitions, signatures, git data
+  index.js        Orchestration: analysis → persist → serve visualization
+  cli.js          CLI wrapper (list, open)
+  visual_src/     React Flow-based interactive graph renderer (published as @frannn2114/repomap-visual)
+```
+
+The pipeline is:
+1. **analyzer.js** extracts structure without calling an LLM
+2. **index.js** saves the result as a RepoGraph JSON and spawns a visual server
+3. **cli.js** provides `list` and `open` commands for saved maps
+
+License
+
+MIT&und
