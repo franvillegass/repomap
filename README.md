@@ -1,4 +1,4 @@
-RepoMap
+## RepoMap
 
 Give coding agents architectural awareness.
 
@@ -8,7 +8,7 @@ RepoMap extracts the structure of any repository without sending source code to 
 
 [![RepoMap demo screenshot](assets/repomap.png)](https://youtu.be/EdsugA9Tz8Y)
 
-Why RepoMap?
+## Why RepoMap?
 
 Modern coding agents spend a significant amount of time reconstructing a project's architecture.
 
@@ -23,7 +23,7 @@ RepoMap changes that workflow.
 
 Instead of asking the LLM to rediscover the architecture every session, RepoMap builds a deterministic structural representation once and lets the agent reason over that representation.
 
-The result is:
+## The result is:
 
 significantly fewer tokens spent on repository understanding
 faster architectural reasoning
@@ -49,7 +49,7 @@ Features
 
 ✅ Large repository support
 
-How it works
+## How it works
 
 RepoMap separates structure extraction from architectural reasoning.
 
@@ -73,7 +73,7 @@ RepoGraph
      ▼
 Interactive visualization
 ```
-Phase 1 — Deterministic Analysis
+## Phase 1 — Deterministic Analysis
 
 The analyzer never calls an LLM.
 
@@ -87,7 +87,7 @@ git information
 
 The result is a compact RawAnalysis that describes the repository structure without exposing the source code.
 
-Phase 2 — Architectural Reasoning
+## Phase 2 — Architectural Reasoning
 
 Instead of reading thousands of files, the LLM receives only the structured analysis.
 
@@ -100,7 +100,7 @@ generate a visualization layout
 
 Only one reasoning step is required.
 
-Phase 3 — Interactive Exploration
+## Phase 3 — Interactive Exploration
 
 RepoMap renders the generated architecture as an editable graph.
 
@@ -114,7 +114,7 @@ viewport culling
 persistent local storage
 Git-aware visualization
 
-Architecture is not static.
+## Architecture is not static.
 
 RepoMap lets you explore repositories together with their Git history.
 
@@ -126,7 +126,7 @@ highlight deleted files
 
 Future versions will expand this into full architectural diff visualization.
 
-Why not let the LLM read the repository?
+## Why not let the LLM read the repository?
 
 Because repository exploration is mostly deterministic.
 
@@ -142,7 +142,7 @@ RepoMap was built to integrate naturally with tools such as OpenCode and Claude.
 
 Instead of repeatedly exploring the repository, agents receive a compact structural model that can be reused for reasoning, visualization and future analysis.
 
-Installation
+## Installation
 
 ```bash
 git clone <repo-url>
@@ -150,7 +150,7 @@ cd repomap-pipeline-v2
 npm install
 ```
 
-The skill is auto-discovered by OpenCode from `.opencode/skills/repomap/`.
+The skill is auto-discovered by OpenCode and Claude from `.opencode/skills/repomap/`.
 
 Quick Start
 
@@ -168,7 +168,7 @@ const raw = await analyze({ localPath: '/path/to/repo' })
 node .opencode/skills/repomap/cli.js list
 ```
 
-RepoGraph format
+## RepoGraph format
 
 ```json
 {
@@ -198,7 +198,7 @@ RepoGraph format
 }
 ```
 
-CLI
+## CLI
 
 ```
 node cli.js list              List all saved maps
@@ -207,7 +207,7 @@ node cli.js open <name>       Open a map by name, file name, or partial match
 
 All commands run from `.opencode/skills/repomap/`.
 
-Architecture
+## Architecture
 
 ```
 .opencode/skills/repomap/
@@ -222,6 +222,6 @@ The pipeline is:
 2. **index.js** saves the result as a RepoGraph JSON and spawns a visual server
 3. **cli.js** provides `list` and `open` commands for saved maps
 
-License
+## License
 
 MIT&und
