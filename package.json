@@ -1,0 +1,7 @@
+{
+  "type": "module",
+  "dependencies": {
+    "glob": "^11.1.0",
+    "@frannn2114/repomap-visual": "^1.2.0"
+  }
+}
